@@ -1,6 +1,5 @@
 import { login, logout, getInfo } from '@/api/login'
 import { getToken, setToken, removeToken } from '@/utils/auth'
-import defAva from '@/assets/logo/logo.png'
 
 const useUserStore = defineStore(
   'user',
@@ -35,7 +34,7 @@ const useUserStore = defineStore(
         return new Promise((resolve, reject) => {
           getInfo().then(res => {
             const user = res.data.user
-            const avatar = (user.avatar == "" || user.avatar == null) ? defAva : user.avatar;
+            //const avatar = "nova-wms";
 
             if (res.data.roles && res.data.roles.length > 0) { // 验证返回的roles是否是一个非空数组
               this.roles = res.data.roles
@@ -45,7 +44,7 @@ const useUserStore = defineStore(
             }
             this.id = user.userId
             this.name = user.userName
-            this.avatar = avatar
+            //this.avatar = avatar
             resolve(res)
           }).catch(error => {
             reject(error)

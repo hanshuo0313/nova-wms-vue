@@ -75,10 +75,10 @@
       <el-card header="商品明细" class="mt10">
         <div class="receipt-order-content">
           <div class="flex-space-between mb8">
-            <div>
+<!--            <div>
               <span>审批 | 一物一码：</span>
               <el-switch
-                :before-change="goSaasTip"
+
                 class="mr10 ml10"
                 inline-prompt
                 size="large"
@@ -88,7 +88,7 @@
                 active-text="开启"
                 inactive-text="关闭"
               />
-            </div>
+            </div>-->
             <el-popover
               placement="left"
               title="提示"
@@ -115,6 +115,27 @@
                 <div v-if="row.itemSku.barcode">条码：{{row.itemSku.barcode}}</div>
               </template>
             </el-table-column>
+            <el-table-column label="库位信息" prop="stockCode" width="180">
+              <template #default="scope">
+                <el-select
+                  v-model="scope.row.stockCode"
+                  placeholder="请选择库位"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="item in getLocationList(scope.row)"
+                    :key="item"
+                    :label="item"
+                    :value="item"
+                  />
+                </el-select>
+              </template>
+            </el-table-column>
+
             <el-table-column label="数量" prop="quantity" width="180">
               <template #default="scope">
                 <el-input-number
@@ -274,6 +295,7 @@ const getParamsBeforeSave = (orderStatus) => {
         amount: it.amount,
         quantity: it.quantity,
         warehouseId: form.value.warehouseId,
+        stockCode: it.stockCode || undefined,
       }
     })
   }
@@ -435,12 +457,33 @@ const handleDeleteDetail = (row, index) => {
   const indexOfSelected = selectedSku.value.findIndex(it => row.itemSku.id=== it.id)
   selectedSku.value.splice(indexOfSelected, 1)
 }
-const goSaasTip = () => {
-  ElMessageBox.alert('如需体验，请在公众号内回复：saas', '请去Saas版本体验', {
-    confirmButtonText: '确定'
-  })
-  return false
+
+const getLocationList = (row) => {
+  // 这里可以根据实际业务需求调整
+  // 方案1：从后端API获取该仓库的所有库位
+  // 方案2：使用固定的库位编码规则
+  // 方案3：根据历史记录推荐常用库位
+
+  // 示例：返回一些常见的库位编码
+  // 实际使用时应该从后端API获取
+  const commonLocations = [
+    'A-01-01', 'A-01-02', 'A-01-03',
+    'A-02-01', 'A-02-02', 'A-02-03',
+    'B-01-01', 'B-01-02', 'B-01-03',
+    'B-02-01', 'B-02-02', 'B-02-03'
+  ]
+
+  // 如果已经有历史库位记录，添加到列表中
+  const existingLocations = form.value.details
+    .filter(item => item.stockCode && item !== row)
+    .map(item => item.stockCode)
+
+  // 合并并去重
+  const allLocations = [...new Set([...commonLocations, ...existingLocations])]
+
+  return allLocations.sort()
 }
+
 </script>
 
 <style lang="scss" scoped>

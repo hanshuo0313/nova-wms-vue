@@ -48,6 +48,10 @@ const props = defineProps({
   itemColor: {
     type: String,
     default: ''
+  },
+  seriesData: {
+    type: Array,
+    default: null
   }
 });
 
@@ -63,6 +67,15 @@ watch(()=>props.chartData, (value) => {
     setOptions();
   });
 })
+
+watch(()=>props.seriesData, (value) => {
+  nextTick(() => {
+    if (!chart.value) {
+      return;
+    }
+    setOptions();
+  });
+}, { deep: true })
 
 onMounted(()=>{
   nextTick(()=>{
@@ -82,21 +95,42 @@ function initChart() {
   chart.value = echarts.init(charRef.value, 'lightTheme')
   setOptions()
 }
+// ... existing code ...
 function setOptions() {
+  const isMultiSeries = props.seriesData && props.seriesData.length > 0
+
+  // 定义颜色数组，用于多系列模式
+  const colorPalette = [
+    '#5470c6', // 蓝色
+    '#91cc75', // 绿色
+    '#fac858', // 黄色
+    '#ee6666', // 红色
+    '#73c0de', // 青色
+    '#3ba272', // 深绿
+    '#fc8452', // 橙色
+    '#9a60b4', // 紫色
+    '#ea7ccc'  // 粉色
+  ]
+
   chart.value.setOption({
+    color: isMultiSeries ? colorPalette : undefined,
     xAxis: {
       name: props.xName,
       data: props.chartData.xData,
       boundaryGap: false,
       axisTick: {
         show: false
+      },
+      axisLabel: {
+        rotate: isMultiSeries ? 45 : 0, // 多系列时旋转标签避免重叠
+        interval: 'auto' // 自动间隔显示标签
       }
     },
     grid: {
       top: '15%',
       left: '2%',
       right: '10%',
-      bottom: '0%',
+      bottom: isMultiSeries ? '8%' : '0%', // 多系列时增加底部边距
       containLabel: true
     },
     tooltip: {
@@ -116,13 +150,28 @@ function setOptions() {
         show: false
       }
     },
-    series: [{
+    legend: isMultiSeries ? {
+      data: props.seriesData.map(s => s.name),
+      bottom: '0%', // 图例放在最底部
+      itemWidth: 12,
+      itemHeight: 8,
+      textStyle: {
+        fontSize: 11
+      }
+    } : undefined,
+    series: isMultiSeries ? props.seriesData.map((series, index) => ({
+      name: series.name,
+      type: 'line',
+      smooth: true,
+      data: series.data,
+      animationDuration: 1500,
+      animationEasing: 'cubicInOut'
+    })) : [{
       name: props.seriesName,
       itemStyle: {
-        color: props.itemColor,
+        color: props.itemColor || '#5470c6',
       },
       lineStyle: {
-        // color: '#FF005A',
         width: 4
       },
       areaStyle: {
@@ -130,7 +179,7 @@ function setOptions() {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           {
             offset: 0,
-            color: props.itemColor
+            color: props.itemColor || '#5470c6'
           },
           {
             offset: 1,
@@ -146,4 +195,5 @@ function setOptions() {
     }]
   })
 }
+
 </script>

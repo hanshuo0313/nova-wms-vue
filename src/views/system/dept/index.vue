@@ -156,7 +156,16 @@ const isExpandAll = ref(true);
 const refreshTable = ref(true);
 
 const data = reactive({
-  form: {},
+  form: {  // ✅ 给 form 完整的默认值
+    deptId: undefined,
+    parentId: undefined,
+    deptName: undefined,
+    orderNum: 0,
+    leader: undefined,
+    phone: undefined,
+    email: undefined,
+    status: "1"
+  },
   queryParams: {
     deptName: undefined,
     status: undefined
@@ -169,6 +178,7 @@ const data = reactive({
     phone: [{ pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/, message: "请输入正确的手机号码", trigger: "blur" }]
   },
 });
+
 
 const { queryParams, form, rules } = toRefs(data);
 
@@ -187,7 +197,7 @@ function cancel() {
 }
 /** 表单重置 */
 function reset() {
-  form.value = {
+  Object.assign(form.value, {  // ✅ 使用 Object.assign 更新属性
     deptId: undefined,
     parentId: undefined,
     deptName: undefined,
@@ -196,9 +206,10 @@ function reset() {
     phone: undefined,
     email: undefined,
     status: "1"
-  };
+  });
   proxy.resetForm("deptRef");
 }
+
 /** 搜索按钮操作 */
 function handleQuery() {
   getList();
@@ -228,11 +239,12 @@ function toggleExpandAll() {
     refreshTable.value = true;
   });
 }
+
 /** 修改按钮操作 */
 function handleUpdate(row) {
   reset();
   getDept(row.deptId).then(response => {
-    form.value = response.data;
+    Object.assign(form.value, response.data);  // ✅ 使用 Object.assign 而不是直接赋值
     open.value = true;
     title.value = "修改部门";
     listDeptExcludeChild(row.deptId).then(response => {
@@ -244,6 +256,7 @@ function handleUpdate(row) {
     });
   });
 }
+
 /** 提交按钮 */
 function submitForm() {
   proxy.$refs["deptRef"].validate(valid => {

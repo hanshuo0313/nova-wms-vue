@@ -5,15 +5,21 @@
     <top-nav id="topmenu-container" class="topmenu-container" v-if="settingsStore.topNav" />
 
     <div class="right-menu">
-      <div style="font-size: 16px;font-weight: bold;margin-right: 10px;">技术支持：关注“程序员诚哥”微信公众号，回复：支持</div>
       <div class="avatar-container">
         <el-dropdown @command="handleCommand" class="right-menu-item hover-effect" trigger="click">
           <div class="avatar-wrapper">
-            <img :src="userStore.avatar" class="user-avatar" />
-            <el-icon><caret-bottom /></el-icon>
+            <div class="user-avatar-circle">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="white">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              </svg>
+            </div>
           </div>
+
           <template #dropdown>
             <el-dropdown-menu>
+              <el-dropdown-item disabled>
+                <span class="username-display">{{ userStore.name || '用户' }}</span>
+              </el-dropdown-item>
               <router-link to="/user/profile">
                 <el-dropdown-item>个人中心</el-dropdown-item>
               </router-link>
@@ -144,7 +150,8 @@ function setLayout() {
     }
 
     .avatar-container {
-      margin-right: 40px;
+      margin-right: 0px;
+      margin-left: auto;
 
       .avatar-wrapper {
         margin-top: 5px;
@@ -165,7 +172,45 @@ function setLayout() {
           font-size: 12px;
         }
       }
+
     }
   }
 }
+
+.user-avatar {
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.user-avatar-circle {
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #606266;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 5px;
+  border: 2px solid #e4e7ed;
+
+  &:hover {
+    background: #7a7d82;
+  }
+}
+
+
+
+i {
+  cursor: pointer;
+  position: absolute;
+  right: -20px;
+  top: 25px;
+  font-size: 12px;
+}
+
+
 </style>

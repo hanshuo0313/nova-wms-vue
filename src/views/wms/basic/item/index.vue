@@ -81,8 +81,8 @@
             <el-table-column label="规格信息" prop="skuName" align="left">
               <template #default="{ row }">
                 <div>{{ row.itemSku.skuName }}</div>
-                <div v-if="row.itemSku.skuCode">编号：{{ row.itemSku.skuCode }}</div>
-                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>
+                <div v-if="row.itemSku.skuCode">编号/条码：{{ row.itemSku.skuCode }}</div>
+<!--                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
               </template>
             </el-table-column>
             <el-table-column label="金额(元)" width="160" align="left">
@@ -118,8 +118,20 @@
                 <div>{{ getVolumeText(row.itemSku) }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" align="right" prop="itemId" width="200">
+            <el-table-column label="下载条码" align="right"  width="106">
+              <template #default="{ row }">
+                <div v-if="row.itemSku.skuCode">
+                  <el-button link type="primary" @click="openBatchDownloadDialog(row, 'barcode')" icon="Download">下载条码</el-button>
+                </div>
+                <div v-if="row.itemSku.skuCode">
+                  <el-button link type="primary" @click="openBatchDownloadDialog(row, 'qrcode')" icon="Download">下载二维码</el-button>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" align="right" prop="itemId" width="90">
               <template #default="scope">
+<!--                <el-button link type="primary" @click="downloadBarcode(scope.row)" icon="Download" v-if="scope.row.itemSku.barcode">下载条码</el-button>
+                <el-button link type="primary" @click="downloadQrcode(scope.row)" icon="Download" v-if="scope.row.itemSku.barcode">下载二维码</el-button>-->
                 <el-button link type="primary" @click="handleDelete(scope.row)" icon="Delete">删除</el-button>
                 <el-button link type="primary" @click="handleUpdate(scope.row)" icon="Edit">修改</el-button>
               </template>
@@ -208,13 +220,13 @@
               <el-table-column label="编号/条码" width="250">
                 <template #default="scope">
                   <div class="flex-center">
-                    <span class="mr5" style="width: 50px">编号</span>
+                    <span class="mr5" style="width: 50px">编号/条码</span>
                     <el-input v-model="scope.row.skuCode" />
                   </div>
-                  <div class="flex-center mt5">
+<!--                  <div class="flex-center mt5">
                     <span class="mr5" style="width: 50px">条码</span>
                     <el-input v-model="scope.row.barcode" />
-                  </div>
+                  </div>-->
                 </template>
               </el-table-column>
               <el-table-column label="长/宽/高(cm)" width="200">
@@ -314,10 +326,56 @@
       </template>
       <div id="qrcode"></div>
     </el-dialog>
-    <div id="outSkuIdBox" style="display: none">
+
+    <!-- 批量下载对话框 -->
+    <el-dialog
+      :title="batchDownloadDialog.type === 'barcode' ? '批量下载条码' : '批量下载二维码'"
+      v-model="batchDownloadDialog.visible"
+      width="500px"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="100px">
+        <el-form-item label="编号/条码">
+          <el-input v-model="batchDownloadDialog.skuCode" disabled />
+        </el-form-item>
+        <el-form-item label="起始编号">
+          <el-input-number
+            v-model="batchDownloadDialog.startNum"
+            :min="1"
+            :max="99999"
+            controls-position="right"            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="结束编号">
+          <el-input-number
+            v-model="batchDownloadDialog.endNum"
+            :min="1"
+            :max="99999"
+            controls-position="right"            style="width: 100%"
+          />
+        </el-form-item>
+        <el-alert
+          :title="`将生成 ${batchDownloadDialog.endNum - batchDownloadDialog.startNum + 1} 个${batchDownloadDialog.type === 'barcode' ? '条码' : '二维码'}`"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <div style="margin-top: 10px; color: #909399; font-size: 12px;">
+          生成的码值格式：{{ batchDownloadDialog.skuCode }}_ + 5位数字（如：{{ batchDownloadDialog.skuCode }}_00001）
+        </div>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button :loading="batchDownloadDialog.loading" type="primary" @click="confirmBatchDownload">确 定</el-button>
+          <el-button @click="batchDownloadDialog.visible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+<!--    <div id="outSkuIdBox" style="display: none">
       <img :src="qrcode"/>
       <canvas ref="barcode"></canvas>
-    </div>
+    </div>-->
   </div>
 </template>
 
@@ -337,6 +395,8 @@ import {useRoute} from "vue-router";
 import Qrcode from 'qrcode'
 import JSBarcode from 'jsbarcode'
 import {useWmsStore} from '@/store/modules/wms'
+import JSZip from 'jszip'
+import {saveAs} from 'file-saver'
 
 const barcode = ref(null)
 const route = useRoute()
@@ -391,6 +451,30 @@ const edit = (node, data) => {
   categoryDialog.title = "修改商品分类";
   categoryDialog.visible = true;
 }
+
+// 批量下载对话框
+const batchDownloadDialog = reactive({
+  visible: false,
+  type: '', // 'barcode' or 'qrcode'
+  skuCode: '',
+  startNum: 1,
+  endNum: 1,
+  loading: false
+})
+
+// 打开批量下载对话框
+const openBatchDownloadDialog = (row, type) => {
+  if (!row.itemSku.skuCode) {
+    proxy?.$modal.msgWarning('该规格没有设置编号/条码');
+    return;
+  }
+  batchDownloadDialog.type = type;
+  batchDownloadDialog.skuCode = row.itemSku.skuCode;
+  batchDownloadDialog.startNum = 1;
+  batchDownloadDialog.endNum = 1;
+  batchDownloadDialog.visible = true;
+}
+
 const dialog = reactive({
   visible: false,
   title: ''
@@ -543,6 +627,8 @@ const handleDeleteItemSku = async (row, index) => {
   const res = await getItem(row.itemId);
   skuForm.itemSkuList = res.data.sku
   form.value = res.data
+  dialog.visible = false;
+  await getList();
 }
 const collapse = (draggingNode, dropNode, type) => {
   //注掉的是同级拖拽
@@ -641,13 +727,21 @@ const handleQueryType = (node, data) => {
 }
 /** 提交按钮 */
 const submitForm = () => {
+  // 将 skuCode 赋值给 barcode
+  skuForm.itemSkuList.forEach(sku => {
+    if (sku.skuCode) {
+      sku.barcode = sku.skuCode;
+    }
+  });
   form.value.sku = skuForm.itemSkuList
   itemFormRef.value.validate(async (valid) => {
     if (valid) {
       let flag = true
       if (!skuForm.itemSkuList || skuForm.itemSkuList.length === 0) {
-        proxy?.$modal.msgError("至少包含一个商品规格");
-        flag = false
+        /*proxy?.$modal.msgError("至少包含一个商品规格");
+        flag = false*/
+        dialog.visible = false;
+        await getList();
       }
       await skuFormRef.value.validate((valid2) => {
         if (!valid2) {
@@ -700,34 +794,167 @@ const handleExport = () => {
     ...queryParams.value
   }, `item_${new Date().getTime()}.xlsx`)
 }
+
+// 确认批量下载
+const confirmBatchDownload = async () => {
+  if (batchDownloadDialog.startNum > batchDownloadDialog.endNum) {
+    proxy?.$modal.msgError('起始编号不能大于结束编号');
+    return;
+  }
+
+  if (batchDownloadDialog.endNum - batchDownloadDialog.startNum + 1 > 9999) {
+    proxy?.$modal.msgError('一次性最多生成9999个码');
+    return;
+  }
+
+  batchDownloadDialog.loading = true;
+
+  try {
+    const zip = new JSZip();
+    const count = batchDownloadDialog.endNum - batchDownloadDialog.startNum + 1;
+
+    for (let i = batchDownloadDialog.startNum; i <= batchDownloadDialog.endNum; i++) {
+      const numStr = String(i).padStart(5, '0');
+      const codeValue = `${batchDownloadDialog.skuCode}_${numStr}`;
+
+      let blob;
+      if (batchDownloadDialog.type === 'barcode') {
+        blob = await generateBarcodeBlob(codeValue);
+      } else {
+        blob = await generateQrcodeBlob(codeValue);
+      }
+
+      const fileName = `${codeValue}.png`;
+      zip.file(fileName, blob);
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const zipFileName = `${batchDownloadDialog.type === 'barcode' ? '条码' : '二维码'}_${batchDownloadDialog.skuCode}_${new Date().getTime()}.zip`;
+    saveAs(content, zipFileName);
+
+    proxy?.$modal.msgSuccess(`成功生成 ${count} 个${batchDownloadDialog.type === 'barcode' ? '条码' : '二维码'}`);
+    batchDownloadDialog.visible = false;
+  } catch (error) {
+    console.error('生成失败:', error);
+    proxy?.$modal.msgError('生成失败，请重试');
+  } finally {
+    batchDownloadDialog.loading = false;
+  }
+}
+
+// 生成单个条码的 Blob
+const generateBarcodeBlob = (codeValue) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      JSBarcode(canvas, codeValue, {
+        format: "CODE128",
+        displayValue: true,
+        fontSize: 16,
+        height: 100,
+        margin: 10,
+        background: "#ffffff",
+        lineColor: "#000000"
+      });
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('生成条码失败'));
+        }
+      }, 'image/png');
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// 生成单个二维码的 Blob
+const generateQrcodeBlob = (codeValue) => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const qrCodeUrl = await Qrcode.toDataURL(codeValue, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 300,
+        color: {
+          dark: '#000000',
+          light: '#ffffff'
+        }
+      });
+
+      const response = await fetch(qrCodeUrl);
+      const blob = await response.blob();
+      resolve(blob);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+
 /** 下载条形码 */
 const downloadBarcode = (row) => {
-  JSBarcode(barcode.value, row.barcode, {
-    format: "CODE128",
-    displayValue: true
-  })
-  const canvas = barcode.value
-  //创建a标签
-  let a = document.createElement('a')
-  //设置下载文件的名字
-  a.download = row.barcode
-  a.href = canvas.toDataURL("image/png")
-  a.click()
+  if (!row.itemSku.skuCode) {
+    proxy?.$modal.msgWarning('该规格没有设置条码');
+    return;
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    JSBarcode(canvas, row.itemSku.skuCode, {
+      format: "CODE128",
+      displayValue: true,
+      fontSize: 16,
+      height: 100,
+      margin: 10,
+      background: "#ffffff",
+      lineColor: "#000000"
+    });
+
+    const a = document.createElement('a');
+    a.download = `条码_${row.itemSku.skuCode}.png`;
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+
+    proxy?.$modal.msgSuccess('条码下载成功');
+  } catch (error) {
+    console.error('生成条码失败:', error);
+    proxy?.$modal.msgError('生成条码失败');
+  }
 }
+
 /** 下载二维码 */
 const downloadQrcode = async (row) => {
-  qrcode.value = await Qrcode.toDataURL(row.barcode)
-  //创建a标签
-  let a = document.createElement('a')
-  //获取二维码的url并赋值为a.href
-  a.href = qrcode.value
-  //设置下载文件的名字
-  a.download = row.barcode
-  //点击事件，相当于下载
-  a.click()
-  //提示信息
-  // this.$message.warn('下载中，请稍后...')
+  if (!row.itemSku.skuCode) {
+    proxy?.$modal.msgWarning('该规格没有设置条码');
+    return;
+  }
+
+  try {
+    const qrCodeUrl = await Qrcode.toDataURL(row.itemSku.skuCode, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 300,
+      color: {
+        dark: '#000000',
+        light: '#ffffff'
+      }
+    });
+
+    const a = document.createElement('a');
+    a.download = `二维码_${row.itemSku.skuCode}.png`;
+    a.href = qrCodeUrl;
+    a.click();
+
+    proxy?.$modal.msgSuccess('二维码下载成功');
+  } catch (error) {
+    console.error('生成二维码失败:', error);
+    proxy?.$modal.msgError('生成二维码失败');
+  }
 }
+
 const getVolumeText = (itemSku) => {
   if((itemSku.length || itemSku.length === 0) && (itemSku.width || itemSku.width === 0) && (itemSku.height || itemSku.height === 0)) {
     return itemSku.length + ' * ' + itemSku.width + ' * ' + itemSku.height

@@ -1,4 +1,4 @@
-<template>
+<!--<template>
   <div class="sidebar-logo-container" :class="{ 'collapse': collapse }" :style="{ backgroundColor: sideTheme === 'theme-dark' ? variables.menuBackground : variables.menuLightBackground }">
     <transition name="sidebarLogoFade">
       <router-link v-if="collapse" key="collapse" class="sidebar-logo-link" to="/">
@@ -11,11 +11,10 @@
       </router-link>
     </transition>
   </div>
-</template>
+</template>-->
 
 <script setup>
 import variables from '@/assets/styles/variables.module.scss'
-import logo from '@/assets/logo/logo.png'
 import useSettingsStore from '@/store/modules/settings'
 
 defineProps({
@@ -25,7 +24,7 @@ defineProps({
   }
 })
 
-const title = ref('ruoyi-wms');
+//const title = ref('nova-wms');
 const settingsStore = useSettingsStore();
 const sideTheme = computed(() => settingsStore.sideTheme);
 </script>

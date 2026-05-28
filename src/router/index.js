@@ -70,7 +70,7 @@ export const constantRoutes = [
       }
     ]
   },
-  {
+  /*{
     path: '',
     component: Layout,
     redirect: '/dashboard',
@@ -82,20 +82,8 @@ export const constantRoutes = [
         meta: { title: '数据大屏', icon: 'dashboard', affix: true }
       }
     ]
-  },
-  {
-    path: '',
-    component: Layout,
-    redirect: '/description',
-    children: [
-      {
-        path: '/description',
-        component: () => import('@/views/index'),
-        name: 'Description',
-        meta: { title: '项目介绍', icon: 'button', affix: true }
-      }
-    ]
-  },
+  },*/
+
   {
     path: '/system/dashboard',
     component: () => import('@/views/dashboard/dashboard'),

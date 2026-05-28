@@ -1,7 +1,7 @@
 {
-  "name": "ruoyi-wms",
+  "name": "nova-wms",
   "version": "4.8.2",
-  "description": "ruoyi-wms后台管理系统",
+  "description": "nova-wms后台管理系统",
   "author": "ZCC",
   "license": "MIT",
   "scripts": {
@@ -20,11 +20,12 @@
     "axios": "0.27.2",
     "echarts": "5.4.0",
     "element-plus": "2.2.27",
-    "file-saver": "2.0.5",
+    "file-saver": "^2.0.5",
     "fuse.js": "6.6.2",
     "js-cookie": "3.0.1",
     "jsbarcode": "^3.11.6",
     "jsencrypt": "3.3.1",
+    "jszip": "^3.10.1",
     "moment": "^2.30.1",
     "nprogress": "0.2.0",
     "pinia": "2.0.22",
