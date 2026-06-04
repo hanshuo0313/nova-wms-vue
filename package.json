@@ -34,7 +34,8 @@
     "vue-cropper": "1.0.3",
     "vue-plugin-hiprint": "^0.0.56",
     "vue-router": "4.1.4",
-    "vue3-seamless-scroll": "^2.0.1"
+    "vue3-seamless-scroll": "^2.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "3.1.0",

@@ -100,6 +100,48 @@
                 </template>
               </template>
             </el-table-column>
+            <el-table-column label="库位编号" prop="stockCode" width="300">
+              <template #default="scope">
+                <div class="location-tags-wrapper">
+                  <el-tag
+                    v-for="(code, index) in parseLocationCodes(scope.row.stockCode)"
+                    :key="index"
+                    closable
+                    type="info"
+                    class="location-tag"
+                    @close="handleRemoveLocation(scope.row, index)"
+                  >
+                    {{ code }}
+                  </el-tag>
+                    <el-select
+                      placeholder="添加库位"
+                      size="small"                    style="width: 140px"
+                      filterable
+                      clearable
+                      :loading="locationLoading"
+                      v-model="scope.row._tempLocationSelect"
+                      @change="handleAddLocation(scope.row, $event)"
+                    >
+                      <el-option
+                        v-for="item in getLocationList(scope.row)"
+                        :key="item"
+                        :label="item"
+                        :value="item"
+                      />
+                    </el-select>
+                  <el-button
+                    v-if="scope.row._originalStockCode && scope.row.stockCode !== scope.row._originalStockCode"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="handleRestoreLocation(scope.row)"
+                    class="restore-btn"
+                  >
+                    恢复
+                  </el-button>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="账面库存" align="right" width="150">
               <template #default="{ row }">
                 <el-statistic :value="Number(row.quantity)" :precision="0"/>
@@ -167,11 +209,18 @@ import {useRoute} from "vue-router";
 import {useWmsStore} from '@/store/modules/wms'
 import {numSub, generateNo} from '@/utils/ruoyi'
 import SkuSelect from "@/views/components/SkuSelect.vue";
+import {listLocation} from "@/api/wms/location";
 
 const {proxy} = getCurrentInstance();
 const {wms_shipment_type} = proxy.useDict("wms_shipment_type");
 const loading = ref(false)
 const selectedSku = ref([])
+// 库位列表缓存（按仓库ID分组）
+const locationListCache = ref({})
+// 当前显示的库位列表
+const currentLocationList = ref([])
+// 库位加载状态
+const locationLoading = ref(false)
 const initFormData = {
   id: undefined,
   orderNo: undefined,
@@ -232,7 +281,10 @@ const startCheck = () => {
             warehouseId: it.warehouseId,
             quantity: Number(it.quantity),
             checkQuantity: Number(it.quantity),
-            newInventory: false
+            newInventory: false,
+            stockCode: it.stockCode || '',
+            _originalStockCode: it.stockCode || '',
+            _tempLocationSelect: ''
           }
         )
     })
@@ -285,6 +337,7 @@ const getParams = (orderStatus) => {
         checkQuantity: it.checkQuantity,
         inventoryId: it.inventoryId,
         warehouseId: form.value.warehouseId,
+        stockCode: it.stockCode || undefined,
       }
     })
   }
@@ -345,6 +398,10 @@ const doCheck = async () => {
     // 校验
     if (!valid) {
       return ElMessage.error('请填写必填项')
+    }
+    const invalidLocationList = form.value.details.filter(it => !it.stockCode)
+    if (invalidLocationList?.length) {
+      return ElMessage.error('请选择库位')
     }
     loading.value = true
     const params = getParams(1);
@@ -420,6 +477,116 @@ const handleChangeQuantity = () => {
   form.value.totalQuantity = totalQuantity
 }
 
+
+// 解析库位编码字符串为数组
+const parseLocationCodes = (stockCode) => {
+  if (!stockCode) {
+    return []
+  }
+  return stockCode.split(',').filter(code => code.trim())
+}
+
+// 处理移除库位标签
+const handleRemoveLocation = (row, index) => {
+  const codes = parseLocationCodes(row.stockCode)
+  codes.splice(index, 1)
+
+  if (codes.length === 0) {
+    row.stockCode = ''
+    ElMessage.warning('请至少保留一个库位')
+  } else {
+    row.stockCode = codes.join(',')
+  }
+}
+
+// 处理添加库位
+const handleAddLocation = (row, locationCode) => {
+  if (!locationCode) {
+    return
+  }
+
+  const codes = parseLocationCodes(row.stockCode || '')
+
+  // 检查是否已存在
+  if (codes.includes(locationCode)) {
+    ElMessage.warning('该库位已添加')
+    row._tempLocationSelect = ''
+    return
+  }
+
+  codes.push(locationCode)
+  row.stockCode = codes.join(',')
+  row._tempLocationSelect = ''
+}
+
+
+// 处理一键恢复原始值
+const handleRestoreLocation = (row) => {
+  row.stockCode = row._originalStockCode
+  row._showLocationSelect = false
+  ElMessage.success('已恢复原始库位')
+}
+
+
+// 获取指定仓库的库位列表
+const fetchLocationList = async (warehouseId) => {
+  if (!warehouseId) {
+    currentLocationList.value = []
+    return
+  }
+
+  // 如果已经缓存过，直接返回
+  if (locationListCache.value[warehouseId]) {
+    currentLocationList.value = locationListCache.value[warehouseId]
+    return
+  }
+
+  try {
+    locationLoading.value = true
+    const response = await listLocation({
+      warehouseId: warehouseId,
+      pageNum: 1,
+      pageSize: 9999
+    })
+
+    // 提取库位编号并缓存
+    const locations = (response.rows || []).map(item => item.stockCode).filter(code => code)
+    locationListCache.value[warehouseId] = locations
+    currentLocationList.value = locations
+  } catch (error) {
+    console.error('获取库位列表失败:', error)
+    currentLocationList.value = []
+  } finally {
+    locationLoading.value = false
+  }
+}
+
+// 监听仓库变化，自动加载库位列表
+watch(() => form.value.warehouseId, (newWarehouseId) => {
+  if (newWarehouseId) {
+    fetchLocationList(newWarehouseId)
+  } else {
+    currentLocationList.value = []
+  }
+}, { immediate: true })
+
+const getLocationList = (row) => {
+  // 解析当前行的库位编码
+  const currentCodes = parseLocationCodes(row.stockCode || '')
+
+  // 合并API返回的库位和已使用的库位
+  const existingLocations = form.value.details
+    .filter(item => item.stockCode && item !== row)
+    .map(item => parseLocationCodes(item.stockCode))
+    .flat()
+
+  // 合并并去重，排除当前行已有的库位
+  const allLocations = [...new Set([...currentLocationList.value, ...existingLocations])]
+    .filter(loc => !currentCodes.includes(loc))
+
+  return allLocations.sort()
+}
+
 </script>
 
 <style lang="scss" scoped>
@@ -436,14 +603,33 @@ const handleChangeQuantity = () => {
 .el-statistic__content {
   font-size: 14px;
 }
-.hover-text {
-  color: black; /* 初始文字颜色 */
-  text-decoration: none; /* 初始没有下划线 */
-  transition: color 0.3s, text-decoration 0.3s; /* 平滑过渡效果 */
-}
 
-.hover-text:hover {
-  color: #409EFF; /* 鼠标移上去时文字颜色变为蓝色 */
-  text-decoration: underline; /* 鼠标移上去时带有下划线 */
+.location-tags-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 32px;
+
+  .location-tag {
+    margin: 2px;
+    font-size: 14px;
+  }
+
+  .restore-btn {
+    margin-left: 4px;
+    font-size: 14px;
+  }
+
+  :deep(.el-select) {
+    .el-input__wrapper {
+      box-shadow: none;
+      border: 1px dashed #dcdfe6;
+
+      &:hover {
+        border-color: #409eff;
+      }
+    }
+  }
 }
 </style>

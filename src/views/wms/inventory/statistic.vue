@@ -78,6 +78,11 @@
             </template>
           </el-table-column>
         </template>
+        <el-table-column label="库位编号">
+          <template #default="{ row }">
+            <div>{{ row.stockCode || '-' }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="库存" prop="quantity" align="right">
           <template #default="{ row }">
             <el-statistic :value="Number(row.quantity)" :precision="0"/>

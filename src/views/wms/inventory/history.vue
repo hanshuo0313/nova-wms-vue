@@ -89,6 +89,11 @@
             <div>{{ useWmsStore().warehouseMap.get(row.warehouseId)?.warehouseName }}</div>
           </template>
         </el-table-column>
+        <el-table-column label="库位编号">
+          <template #default="{ row }">
+            <div>{{ row.stockCode || '-' }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="操作前" align="right">
           <template #default="{ row }">
             <div >

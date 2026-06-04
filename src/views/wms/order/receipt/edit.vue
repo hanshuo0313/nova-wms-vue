@@ -121,10 +121,8 @@
                   v-model="scope.row.stockCode"
                   placeholder="请选择库位"
                   filterable
-                  allow-create
-                  default-first-option
-                  clearable
-                  style="width: 100%"
+                  clearable                  style="width: 100%"
+                  :loading="locationLoading"
                 >
                   <el-option
                     v-for="item in getLocationList(scope.row)"
@@ -200,6 +198,7 @@ import {useWmsStore} from '@/store/modules/wms'
 import { numSub, generateNo } from '@/utils/ruoyi'
 import { delReceiptOrderDetail } from '@/api/wms/receiptOrderDetail'
 import {getWarehouseAndSkuKey} from "@/utils/wmsUtil";
+import { listLocation, getLocation, delLocation, addLocation, updateLocation } from "@/api/wms/location";
 
 const {proxy} = getCurrentInstance();
 const { wms_receipt_type } = proxy.useDict("wms_receipt_type");
@@ -207,6 +206,12 @@ const selectedSku = ref([])
 const mode = ref(false)
 const loading = ref(false)
 const skuSelectRef = ref(null)
+// 库位列表缓存（按仓库ID分组）
+const locationListCache = ref({})
+// 当前显示的库位列表
+const currentLocationList = ref([])
+// 库位加载状态
+const locationLoading = ref(false)
 const initFormData = {
   id: undefined,
   orderNo: undefined,
@@ -322,6 +327,15 @@ const doSave = async (orderStatus = 0) => {
     if (!valid) {
       return ElMessage.error('请填写必填项')
     }
+
+    // 校验商品明细中的库位
+    if (form.value.details?.length) {
+      const invalidLocationList = form.value.details.filter(it => !it.stockCode)
+      if (invalidLocationList?.length) {
+        return ElMessage.error('请为所有商品选择库位')
+      }
+    }
+
     const params = getParamsBeforeSave(orderStatus)
     loading.value = true
     if (params.id) {
@@ -366,6 +380,11 @@ const doWarehousing = async () => {
       if (invalidQuantityList?.length) {
         return ElMessage.error('请选择数量')
       }
+
+      const invalidLocationList = form.value.details.filter(it => !it.stockCode)
+      if (invalidLocationList?.length) {
+        return ElMessage.error('请选择库位')
+      }
     }
     const params = getParamsBeforeSave(1);
     loading.value = true
@@ -397,6 +416,15 @@ onMounted(() => {
   }
 })
 
+/** 查询库位管理列表 */
+function getStockPlaceList() {
+  loading.value = true;
+  listLocation(queryParams.value).then(response => {
+    locationList.value = response.rows;
+    total.value = response.total;
+    loading.value = false;
+  });
+}
 
 // 获取入库单详情
 const loadDetail = (id) => {
@@ -458,28 +486,57 @@ const handleDeleteDetail = (row, index) => {
   selectedSku.value.splice(indexOfSelected, 1)
 }
 
+
+// 获取指定仓库的库位列表
+const fetchLocationList = async (warehouseId) => {
+  if (!warehouseId) {
+    currentLocationList.value = []
+    return
+  }
+
+  // 如果已经缓存过，直接返回
+  if (locationListCache.value[warehouseId]) {
+    currentLocationList.value = locationListCache.value[warehouseId]
+    return
+  }
+
+  try {
+    locationLoading.value = true
+    const response = await listLocation({
+      warehouseId: warehouseId,
+      pageNum: 1,
+      pageSize: 9999
+    })
+
+    // 提取库位编号并缓存
+    const locations = (response.rows || []).map(item => item.stockCode).filter(code => code)
+    locationListCache.value[warehouseId] = locations
+    currentLocationList.value = locations
+  } catch (error) {
+    console.error('获取库位列表失败:', error)
+    currentLocationList.value = []
+  } finally {
+    locationLoading.value = false
+  }
+}
+
+// 监听仓库变化，自动加载库位列表
+watch(() => form.value.warehouseId, (newWarehouseId) => {
+  if (newWarehouseId) {
+    fetchLocationList(newWarehouseId)
+  } else {
+    currentLocationList.value = []
+  }
+}, { immediate: true })
+
 const getLocationList = (row) => {
-  // 这里可以根据实际业务需求调整
-  // 方案1：从后端API获取该仓库的所有库位
-  // 方案2：使用固定的库位编码规则
-  // 方案3：根据历史记录推荐常用库位
-
-  // 示例：返回一些常见的库位编码
-  // 实际使用时应该从后端API获取
-  const commonLocations = [
-    'A-01-01', 'A-01-02', 'A-01-03',
-    'A-02-01', 'A-02-02', 'A-02-03',
-    'B-01-01', 'B-01-02', 'B-01-03',
-    'B-02-01', 'B-02-02', 'B-02-03'
-  ]
-
-  // 如果已经有历史库位记录，添加到列表中
+  // 合并API返回的库位和已使用的库位
   const existingLocations = form.value.details
     .filter(item => item.stockCode && item !== row)
     .map(item => item.stockCode)
 
   // 合并并去重
-  const allLocations = [...new Set([...commonLocations, ...existingLocations])]
+  const allLocations = [...new Set([...currentLocationList.value, ...existingLocations])]
 
   return allLocations.sort()
 }
