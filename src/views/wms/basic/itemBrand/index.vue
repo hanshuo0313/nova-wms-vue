@@ -45,7 +45,7 @@
 
     </el-card>
     <!-- 添加或修改商品品牌对话框 -->
-    <el-drawer :title="title" v-model="open" size="50%" append-to-body>
+    <el-dialog :title="title" v-model="open" width="20%" append-to-body>
       <el-form ref="itemBrandRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="品牌名称" prop="brandName">
           <el-input v-model="form.brandName" placeholder="请输入品牌名称" />
@@ -57,7 +57,7 @@
           <el-button @click="cancel">取 消</el-button>
         </div>
       </template>
-    </el-drawer>
+    </el-dialog>
   </div>
 </template>
 

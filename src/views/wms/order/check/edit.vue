@@ -61,21 +61,14 @@
       <el-card header="商品明细" class="mt10">
         <div class="receipt-order-content">
           <div class="flex-space-between mb8">
-<!--            <div>
-              <span>审批 | 一物一码：</span>
-              <el-switch
-                class="mr10 ml10"
-                inline-prompt
-                size="large"
-                :active-value="true"
-                :inactive-value="false"
-                active-text="开启"
-                inactive-text="关闭"
-              />
-            </div>-->
-                  <el-button type="primary" plain="plain" size="default" @click="showSkuSelect" icon="Plus"
-                             :disabled="!form.warehouseId">新增库存
-                  </el-button>
+            <div>
+              <el-button type="primary" plain="plain" size="default" @click="showInventorySelect" icon="Plus"
+                         :disabled="!form.warehouseId">指定商品盘点
+              </el-button>
+              <el-button type="success" plain="plain" size="default" @click="showSkuSelect" icon="Plus"
+                         :disabled="!form.warehouseId">新增商品
+              </el-button>
+            </div>
           </div>
           <el-table :data="form.details" border empty-text="暂无商品明细">
             <el-table-column label="商品信息" prop="itemSku.itemName">
@@ -165,15 +158,23 @@
             </el-table-column>
             <el-table-column label="操作" width="100" align="center">
               <template #default="scope">
-                <el-button icon="Delete" type="danger" plain size="small" v-if="scope.row.newInventory"
+                <el-button icon="Delete" type="danger" plain size="small"
                            @click="handleDeleteDetail(scope.row, scope.$index)" link>删除
                 </el-button>
-                <div v-else> - </div>
               </template>
             </el-table-column>
           </el-table>
         </div>
       </el-card>
+      <InventorySelect
+        ref="inventorySelectRef"
+        :model-value="inventorySelectShow"
+        @handleOkClick="handleInventorySelectOkClick"
+        @handleCancelClick="inventorySelectShow = false"
+        :size="'90%'"
+        :warehouse-id="form.warehouseId"
+        :selected-inventory="selectedInventory"
+      />
       <SkuSelect
         ref="skuSelectRef"
         :model-value="skuSelectShow"
@@ -201,6 +202,7 @@
 <script setup name="CheckOrderEdit">
 import {computed, getCurrentInstance, onMounted, reactive, ref, toRef, toRefs, watch} from "vue";
 const skuSelectRef = ref(null)
+const inventorySelectRef = ref(null)
 import {addCheckOrder, getCheckOrder, updateCheckOrder, check} from "@/api/wms/checkOrder";
 import {delCheckOrderDetail} from "@/api/wms/checkOrderDetail";
 import {listInventoryNoPage} from "@/api/wms/inventory";
@@ -210,6 +212,12 @@ import {useWmsStore} from '@/store/modules/wms'
 import {numSub, generateNo} from '@/utils/ruoyi'
 import SkuSelect from "@/views/components/SkuSelect.vue";
 import {listLocation} from "@/api/wms/location";
+import InventorySelect from "@/views/components/InventorySelect.vue";  // 新增这一行
+import {getWarehouseAndSkuKey} from "@/utils/wmsUtil";
+
+const selectedInventory = ref([])
+const filterZeroInventory = ref(false)
+
 
 const {proxy} = getCurrentInstance();
 const {wms_shipment_type} = proxy.useDict("wms_shipment_type");
@@ -252,7 +260,6 @@ const close = () => {
 }
 const inventorySelectShow = ref(false)
 const skuSelectShow = ref(false)
-const currentSkuSelectIndex = ref(null)
 // 盘库中标识
 const checking = ref(false)
 
@@ -261,36 +268,9 @@ const startCheck = () => {
   if (!form.value.warehouseId) {
     return ElMessage.error('请先选择仓库！')
   }
-  const query = {
-    warehouseId: form.value.warehouseId,
-  }
-  checking.value = true
-  loading.value = true
-  listInventoryNoPage(query).then(res => {
-    selectedSku.value = res.data.map(it => {
-      return {
-        id: it.skuId
-      }
-    })
-    res.data.forEach(it => {
-        form.value.details.push({
-            itemSku: it.itemSku,
-            item: it.item,
-            inventoryId: it.id,
-            skuId: it.itemSku.id,
-            warehouseId: it.warehouseId,
-            quantity: Number(it.quantity),
-            checkQuantity: Number(it.quantity),
-            newInventory: false,
-            stockCode: it.stockCode || '',
-            _originalStockCode: it.stockCode || '',
-            _tempLocationSelect: ''
-          }
-        )
-    })
-  }).finally(() => loading.value = false)
+  checking.value = true  // 只切换状态，进入编辑界面
 }
-// 选择成功
+// 选择成功(新增商品)
 const handleOkClick = (item) => {
   skuSelectShow.value = false
   selectedSku.value = [...item]
@@ -306,6 +286,13 @@ const handleOkClick = (item) => {
           quantity: 0,
           checkQuantity: 0,
           newInventory: true
+          /*inventoryId: it.inventoryId || null,
+          quantity: Number(it.quantity || 0),
+          checkQuantity: Number(it.quantity || 0),
+          newInventory: !it.inventoryId,
+          stockCode: it.stockCode || '',
+          _originalStockCode: it.stockCode || '',
+          _tempLocationSelect: ''*/
         })
     }
   })
@@ -315,7 +302,39 @@ const showSkuSelect = () => {
   skuSelectRef.value.getList()
   skuSelectShow.value = true
 }
-// 选择商品 end
+
+// 显示库存选择弹窗（指定商品盘点）
+const showInventorySelect = () => {
+  inventorySelectRef.value.setWarehouseId(form.value.warehouseId)
+  inventorySelectRef.value.getList()
+  inventorySelectShow.value = true
+}
+
+// 选择成功（从库存中选择 - 指定商品盘点）
+const handleInventorySelectOkClick = (item) => {
+  inventorySelectShow.value = false
+  selectedInventory.value = [...item]
+  item.forEach(it => {
+    if (!form.value.details.find(detail => getWarehouseAndSkuKey(detail) === getWarehouseAndSkuKey(it))) {
+      form.value.details.push(
+        {
+          itemSku: it.itemSku,
+          item: it.item,
+          skuId: it.skuId,
+          warehouseId: form.value.warehouseId,
+          inventoryId: it.id,
+          quantity: Number(it.quantity),
+          checkQuantity: Number(it.quantity),
+          newInventory: false,
+          stockCode: it.stockCode || '',
+          _originalStockCode: it.stockCode || '',
+          _tempLocationSelect: ''
+        })
+    }
+  })
+  handleChangeQuantity()
+}
+
 
 // 初始化receipt-order-form ref
 const checkForm = ref()
@@ -437,12 +456,20 @@ const loadDetail = (id) => {
     if (response.data.details?.length) {
       response.data.details.forEach(detail => {
         detail.newInventory = !detail.inventoryId
+        detail._originalStockCode = detail.stockCode || ''  // 新增这一行
+        detail._tempLocationSelect = ''  // 新增这一行
       })
-      selectedSku.value = response.data.details.map(it => {
-        return {
-          id: it.skuId
-        }
-      })
+      // 初始化两个选中列表
+      selectedInventory.value = response.data.details
+        .filter(it => it.inventoryId)
+        .map(it => ({
+          id: it.inventoryId,
+          skuId: it.skuId,
+          warehouseId: it.warehouseId
+        }))
+      selectedSku.value = response.data.details.map(it => ({
+        id: it.skuId
+      }))
     }
     form.value = {...response.data}
     Promise.resolve();
@@ -451,6 +478,7 @@ const loadDetail = (id) => {
     loading.value = false
   })
 }
+
 
 const handleDeleteDetail = (row, index) => {
   if (row.id) {
@@ -463,9 +491,17 @@ const handleDeleteDetail = (row, index) => {
   } else {
     form.value.details.splice(index, 1)
   }
-  const indexOfSelected = selectedSku.value.findIndex(it => row.itemSku.id=== it.id)
-  selectedSku.value.splice(indexOfSelected, 1)
+  // 同时从两个选中列表中移除
+  const indexOfInventory = selectedInventory.value.findIndex(it => getWarehouseAndSkuKey(it) === getWarehouseAndSkuKey(row))
+  if (indexOfInventory !== -1) {
+    selectedInventory.value.splice(indexOfInventory, 1)
+  }
+  const indexOfSku = selectedSku.value.findIndex(it => it.id === row.itemSku.id)
+  if (indexOfSku !== -1) {
+    selectedSku.value.splice(indexOfSku, 1)
+  }
 }
+
 
 const handleChangeQuantity = () => {
   let totalQuantity = 0

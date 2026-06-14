@@ -50,6 +50,10 @@ const props = defineProps({
       }
     }
   },
+  seriesData: {
+    type: Array,
+    default: () => []
+  }
 })
 
 const stationBar = ref()
@@ -72,76 +76,46 @@ onBeforeUnmount(()=>{
 
 function initChart() {
   chart.value = echarts.init(stationBar.value, 'lightTheme')
+
+  const hasSeriesData = props.seriesData && props.seriesData.length > 0
+
   chart.value.setOption({
     tooltip: {
       trigger: 'axis',
-      axisPointer: { // 坐标轴指示器，坐标轴触发有效
-        type: 'shadow' // 默认为直线，可选为：'line' | 'shadow'
-      },
-      // backgroundColor: 'rgba(28, 37, 80, 0.9)',
-      // borderColor: '#2969e8',
-      // textStyle: {
-      //   color: '#fff'
-      // }
+      axisPointer: {
+        type: 'shadow'
+      }
     },
+    legend: hasSeriesData ? {
+      data: props.seriesData.map(item => item.name),
+      top: '5%'
+    } : undefined,
     grid: {
-      top: '15%',
+      top: hasSeriesData ? '20%' : '15%',
       left: '2%',
       right: '4%',
       bottom: '2%',
       containLabel: true
     },
-    // dataZoom: {
-    //   show: true,
-    //   type: 'inside'
-    // },
     xAxis: [{
       name: props.xName,
       type: 'category',
-      data: props.chartData.xData,
-      // axisTick: {
-      //   alignWithLabel: true
-      // },
-      // nameTextStyle: {
-      //   color: '#fff'
-      // },
-      // splitLine: {
-      //   lineStyle: {
-      //     color: '#1d3666'
-      //   }
-      // },
-      // axisLabel: {
-      //   color: '#fff'
-      // },
-      // axisLine: {
-      //   lineStyle: {
-      //     color: this.barColor[0]
-      //   }
-      // }
+      data: props.chartData.xData
     }],
     yAxis: [{
-      // type: 'value',
-      // name: 'kmh',
-      // axisTick: {
-      //   show: true
-      // }
       type: 'value',
       name: props.setting.yName,
       position: 'left',
-      alignTicks: true,
-      // nameTextStyle: {
-      //   color: '#fff'
-      // },
-      // splitLine: {
-      //   lineStyle: {
-      //     color: '#1d3666'
-      //   }
-      // },
-      // axisLabel: {
-      //   color: '#fff'
-      // }
+      alignTicks: true
     }],
-    series: [{
+    series: hasSeriesData ? props.seriesData.map(item => ({
+      ...item,
+      barWidth: '10%',
+      barGap: '8%',
+      emphasis: {
+        focus: 'series'
+      }
+    })) : [{
       name: props.setting.seriesName,
       type: 'bar',
       stack: 'vistors',

@@ -44,7 +44,8 @@ import TreeSelect from '@/components/TreeSelect'
 import DictTag from '@/components/DictTag'
 // 打印插件
 import { hiPrintPlugin } from 'vue-plugin-hiprint';
-
+//翻译插件
+import immersiveTranslate from './plugins/immersiveTranslate'
 const app = createApp(App)
 
 // 全局方法挂载
@@ -87,5 +88,16 @@ app.use(ElementPlus, {
 
 // 修改 el-dialog 默认点击遮照为不关闭
 app._context.components.ElDialog.props.closeOnClickModal.default = false
+
+//翻译API
+app.use(immersiveTranslate, {
+  apiEndpoint: '/translate-api', // 使用本地代理，避免CORS问题
+  sourceLang: 'zh',
+  targetLang: 'en',
+  cacheEnabled: true,
+  autoTranslateOnRouteChange: true, // 启用路由切换时自动翻译
+  persistentCache: true, // 启用持久化缓存（新增）
+  cacheStorageKey: 'translation_cache_v1' // localStorage 键名（新增）
+})
 
 app.mount('#app')

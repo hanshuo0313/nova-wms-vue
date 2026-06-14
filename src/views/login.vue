@@ -230,7 +230,7 @@ getCookie();
 
   :deep(.el-input__wrapper) {
     border-radius: 12px;
-    padding: 14px 18px;
+    padding: 11px 15px;
     background-color: #f8fafc;
     border: 2px solid transparent;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -249,7 +249,7 @@ getCookie();
   }
 
   :deep(.el-input__inner) {
-    font-size: 15px;
+    font-size: 18px;
     color: #1e293b;
 
     &::placeholder {

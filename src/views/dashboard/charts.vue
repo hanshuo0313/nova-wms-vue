@@ -83,9 +83,9 @@
       <el-row :gutter="12">
         <el-col :span="12">
           <el-card class="box-card" shadow="never">
-            <div class="card-title">商品分类库存分布</div>
+            <div class="card-title">库位统计表</div>
             <div style="height: calc(100% - 30px);">
-              <StationLine height="100%" yName="件" :chartData="categoryLineData" itemColor="#5470c6"/>
+              <StationBar height="100%" :chartData="locationBarData" :series-data="locationSeriesData" xName="个"/>
             </div>
           </el-card>
         </el-col>
@@ -109,6 +109,7 @@ import StationBar from './components/StationBar.vue'
 import { onMounted, ref } from 'vue'
 import { listInventoryBoard } from '@/api/wms/inventory'
 import { listInventoryHistory } from '@/api/wms/inventoryHistory'
+import { listLocation } from '@/api/wms/location'
 import { useWmsStore } from '@/store/modules/wms'
 import moment from 'moment'
 
@@ -131,11 +132,12 @@ const topBarChartData = ref({
 })
 const topXName = ref('件')
 
-// 分类折线图
-const categoryLineData = ref({
+// 库位柱状图
+const locationBarData = ref({
   xData: [],
   yData: []
 })
+const locationSeriesData = ref([])
 
 // 趋势折线图
 const trendLineData = ref({
@@ -145,32 +147,24 @@ const trendLineData = ref({
 
 onMounted(() => {
   loadInventoryData()
+  loadLocationData()
 })
 
 // 加载库存数据
 async function loadInventoryData() {
   try {
-    // 获取所有库存数据（按仓库维度）
     const warehouseRes = await listInventoryBoard({}, 'warehouse')
     const warehouseData = warehouseRes.rows || []
 
-    // 获取所有库存数据（按商品维度）
     const itemRes = await listInventoryBoard({}, 'item')
     const itemData = itemRes.rows || []
 
-    // 计算顶部统计数据
     calculateTopStats(warehouseData, itemData)
 
-    // 计算仓库饼图数据
     calculateWarehousePie(warehouseData)
 
-    // 计算Top10柱状图
     calculateTop10Bar(itemData)
 
-    // 计算分类折线图
-    calculateCategoryLine(itemData)
-
-    // 加载各仓库最近一个月的库存变化趋势
     await loadWarehouseTrendData()
 
   } catch (error) {
@@ -214,20 +208,30 @@ function calculateWarehousePie(warehouseData) {
 
 // 计算Top10柱状图
 function calculateTop10Bar(itemData) {
+  console.log('商品维度原始数据:', itemData)
+
   if (topType.value === 'quantity') {
     // 按数量统计
     const itemMap = {}
     itemData.forEach(item => {
-      const itemName = item.item.itemName
+      const itemName = item.item?.itemName || '未知商品'
+      const quantity = Number(item.quantity || 0)
+
+      console.log(`商品: ${itemName}, 数量: ${quantity}`)
+
       if (!itemMap[itemName]) {
         itemMap[itemName] = 0
       }
-      itemMap[itemName] += Number(item.quantity || 0)
+      itemMap[itemName] += quantity
     })
+
+    console.log('按数量统计结果:', itemMap)
 
     const sorted = Object.entries(itemMap)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
+
+    console.log('Top10排序结果:', sorted)
 
     topBarChartData.value = {
       xData: sorted.map(item => item[0]),
@@ -238,7 +242,7 @@ function calculateTop10Bar(itemData) {
     // 按SKU数量统计
     const itemMap = {}
     itemData.forEach(item => {
-      const itemName = item.item.itemName
+      const itemName = item.item?.itemName || '未知商品'
       if (!itemMap[itemName]) {
         itemMap[itemName] = new Set()
       }
@@ -255,27 +259,75 @@ function calculateTop10Bar(itemData) {
     }
     topXName.value = '个'
   }
+
+  console.log('最终图表数据:', topBarChartData.value)
 }
 
-// 计算分类折线图
-function calculateCategoryLine(itemData) {
-  const categoryMap = {}
-  itemData.forEach(item => {
-    const brand = item.item.itemBrand ?
-      (wmsStore.itemBrandMap.get(item.item.itemBrand)?.brandName || '未分类') :
-      '未分类'
+// 计算库位柱状图
+async function loadLocationData() {
+  try {
+    const res = await listLocation({ pageNum: 1, pageSize: 1000 })
+    const locationList = res.rows || []
 
-    if (!categoryMap[brand]) {
-      categoryMap[brand] = 0
+    const warehouseMap = {}
+
+    locationList.forEach(location => {
+      const warehouseName = wmsStore.warehouseMap.get(location.warehouseId)?.warehouseName || '未知仓库'
+
+      if (!warehouseMap[warehouseName]) {
+        warehouseMap[warehouseName] = {
+          total: 0,
+          inUse: 0,
+          free: 0
+        }
+      }
+
+      warehouseMap[warehouseName].total++
+
+      if (location.status === '2' || location.status === 2) {
+        warehouseMap[warehouseName].inUse++
+      } else if (location.status === '1' || location.status === 1) {
+        warehouseMap[warehouseName].free++
+      }
+    })
+
+    const warehouses = Object.keys(warehouseMap)
+    const totalData = warehouses.map(name => warehouseMap[name].total)
+    const inUseData = warehouses.map(name => warehouseMap[name].inUse)
+    const freeData = warehouses.map(name => warehouseMap[name].free)
+
+    locationBarData.value = {
+      xData: warehouses,
+      series: [
+        {
+          name: '总库位数',
+          data: totalData,
+          type: 'bar',
+          itemStyle: { color: '#5470c6' }
+        },
+        {
+          name: '使用中',
+          data: inUseData,
+          type: 'bar',
+          itemStyle: { color: '#fac858' }
+        },
+        {
+          name: '空闲',
+          data: freeData,
+          type: 'bar',
+          itemStyle: { color: '#91cc75' }
+        }
+      ]
     }
-    categoryMap[brand] += Number(item.quantity || 0)
-  })
 
-  const sorted = Object.entries(categoryMap).sort((a, b) => b[1] - a[1])
-
-  categoryLineData.value = {
-    xData: sorted.map(item => item[0]),
-    yData: sorted.map(item => item[1])
+    locationSeriesData.value = locationBarData.value.series
+  } catch (error) {
+    console.error('加载库位数据失败:', error)
+    locationBarData.value = {
+      xData: [],
+      series: []
+    }
+    locationSeriesData.value = []
   }
 }
 

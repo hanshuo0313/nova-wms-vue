@@ -118,7 +118,6 @@
          </el-table-column>
          <el-table-column label="请求方式" align="center" prop="requestMethod" />
          <el-table-column label="操作人员" align="center" width="110" prop="operName" :show-overflow-tooltip="true" sortable="custom" :sort-orders="['descending', 'ascending']" />
-         <el-table-column label="部门" align="center" prop="deptName" width="130" :show-overflow-tooltip="true" />
          <el-table-column label="操作地址" align="center" prop="operIp" width="130" :show-overflow-tooltip="true" />
          <el-table-column label="操作地点" align="center" prop="operLocation" :show-overflow-tooltip="true" />
         <el-table-column label="操作状态" align="center" prop="status">

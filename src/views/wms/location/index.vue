@@ -74,7 +74,7 @@
 
       <el-table v-loading="loading" :data="locationList" border class="mt20" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="55" align="center" />
-        <el-table-column label="序号" type="index" width="60" align="center" />
+        <el-table-column label="序号" type="index" width="140" align="center" />
         <el-table-column label="所属仓库" prop="warehouseId">
           <template #default="scope">
             {{ getWarehouseName(scope.row.warehouseId) }}
@@ -86,7 +86,7 @@
             <dict-tag :options="wms_location_status" :value="scope.row.status"/>
           </template>
         </el-table-column>
-        <el-table-column label="操作" align="right" class-name="small-padding fixed-width" width="180">
+        <el-table-column label="操作" align="left" class-name="small-padding fixed-width" width="200">
           <template #default="scope">
             <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['wms:location:edit']">修改</el-button>
             <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['wms:location:remove']">删除</el-button>
