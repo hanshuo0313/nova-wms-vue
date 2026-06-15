@@ -133,7 +133,8 @@ export default {
 
     // ---------- 增量翻译优化：去重、微批次、重试 ----------
     const pendingTranslations = new Map(); // text -> Promise<translation> 去重正在飞行的请求
-    const INCREMENTAL_BATCH_SIZE = 10; // 增量翻译每批条数（比全页翻译小）
+    const INCREMENTAL_BATCH_SIZE = 2; // 增量翻译每批条数（LibreTranslate 逐行处理，批次越大越慢）
+    const BATCH_DELAY_MS = 200; // 批次间隔(ms)，防止 CPU 打满
     const INCREMENTAL_TIMEOUT = 20000; // 增量翻译批次超时(ms)
     const SINGLE_TIMEOUT = 25000; // 降级逐条翻译超时(ms)，比批次更长
     const MAX_RETRY = 2; // 最大重试次数
@@ -518,8 +519,9 @@ export default {
 
       if (toTranslate.length > 0) {
         const controller = ensureAbortController();
-        // 分批翻译，每批最多 30 条（平衡速度和稳定性）
-        const batchSize = 30;
+        // 分批翻译，使用小批次（LibreTranslate 逐行处理，批次越大越慢）
+        // LibreTranslate 逐行处理批量，批次越大越慢，故使用小批次 + 顺序处理
+        const batchSize = 3;
         const batches = [];
         for (let i = 0; i < toTranslate.length; i += batchSize) {
           batches.push(toTranslate.slice(i, i + batchSize));
@@ -582,13 +584,17 @@ export default {
           }
         };
 
-        // 并行处理所有批次
-        const batchPromises = batches.map((batch, batchIndex) =>
-          translateBatchWithRetry(batch, batchIndex)
-        );
-
-        // 等待所有批次完成
-        const batchResults = await Promise.all(batchPromises);
+        // 顺序处理所有批次（每批之间加延迟，防止 CPU 打满）
+        const batchResults = [];
+        for (let i = 0; i < batches.length; i++) {
+          if (controller.signal.aborted) break;
+          const result = await translateBatchWithRetry(batches[i], i);
+          batchResults.push(result);
+          // 批次之间加延迟（最后一批不延迟）
+          if (i < batches.length - 1) {
+            await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+          }
+        }
 
         // 合并结果
         let successCount = 0;
