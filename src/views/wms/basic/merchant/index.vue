@@ -62,7 +62,7 @@
         <el-table-column label="级别" prop="merchantLevel" />
         <el-table-column label="联系人" prop="contactPerson" />
         <el-table-column label="备注" prop="remark" />
-        <el-table-column label="操作" align="right" class-name="small-padding fixed-width">
+        <el-table-column label="操作" align="left" class-name="small-padding fixed-width">
             <template #default="scope">
                 <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['wms:merchant:edit']">修改</el-button>
                 <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['wms:merchant:remove']">删除</el-button>

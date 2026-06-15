@@ -37,6 +37,80 @@ export default {
     // MutationObserver 实例（用于监听动态内容）
     let observer = null;
 
+    // ---------- 注入翻译自适应样式（容器自动扩展适配译文） ----------
+    function injectTranslationStyles() {
+      if (document.getElementById('__immersive_translate_styles')) return;
+      const style = document.createElement('style');
+      style.id = '__immersive_translate_styles';
+      style.textContent = `
+        /* 翻译节点基础：允许文字在容器内自动换行 */
+        .translated-node {
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          hyphens: auto;
+          line-height: inherit;
+        }
+        .translated-node .translated-text {
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          hyphens: auto;
+        }
+        /* 表格：允许列宽根据内容自动扩展 */
+        .el-table .translated-node,
+        .el-table__row .translated-node,
+        table .translated-node {
+          display: inline;
+          max-width: 100%;
+        }
+        .el-table .translated-node .translated-text,
+        .el-table__row .translated-node .translated-text,
+        table .translated-node .translated-text {
+          white-space: normal;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        /* 表头：允许换行 + 自动扩展 */
+        .el-table__header .translated-node .translated-text {
+          white-space: normal;
+          word-break: break-word;
+        }
+        /* 单元格内容自动换行 */
+        .el-table .cell {
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        /* 表格单元格宽度自动适配内容 */
+        .el-table th.el-table__cell,
+        .el-table td.el-table__cell {
+          min-width: fit-content;
+        }
+
+        /* 表单标签：允许自动扩展宽度 */
+        .el-form-item__label:has(.translated-node) {
+          width: auto !important;
+          min-width: 80px;
+          white-space: nowrap;
+          padding-right: 12px;
+        }
+
+        /* 按钮/标签：紧凑显示，超长省略号 */
+        .el-button .translated-node .translated-text,
+        .el-tag .translated-node .translated-text {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: inline-block;
+          max-width: 100%;
+          vertical-align: middle;
+        }
+        /* 面包屑 */
+        .el-breadcrumb .translated-node .translated-text {
+          white-space: nowrap;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     // ---------- 请求取消控制器 ----------
     let abortController = null; // 用于取消所有飞行中的翻译请求
 
@@ -313,7 +387,7 @@ export default {
       return nodes;
     }
 
-    // 将文本替换为原文+译文的包裹节点（增加节点连接性检查）
+    // 将文本替换为原文+译文的包裹节点（连接性检查 + 动态容器适配）
     function wrapWithTranslation(textNode, original, translation) {
       // 安全检查：节点必须仍在 DOM 中且未被其他逻辑替换
       if (!textNode || !textNode.parentNode || !textNode.isConnected) return;
@@ -335,6 +409,86 @@ export default {
       wrapper.appendChild(origSpan);
       wrapper.appendChild(transSpan);
       textNode.replaceWith(wrapper);
+
+      // 译文比原文长时，动态调整容器宽度以适应英文
+      if (translation.length > original.length) {
+        requestAnimationFrame(() => {
+          if (!wrapper.isConnected) return;
+          adjustContainerForTranslation(wrapper, transSpan, original, translation);
+        });
+      }
+    }
+
+    // 动态调整容器宽度以适应较长的英文译文
+    function adjustContainerForTranslation(wrapper, transSpan, original, translation) {
+      // 1. 测量译文实际宽度（临时设为 nowrap 获取自然宽度）
+      const prevWhiteSpace = transSpan.style.whiteSpace;
+      transSpan.style.whiteSpace = 'nowrap';
+      const translationWidth = transSpan.scrollWidth;
+      transSpan.style.whiteSpace = prevWhiteSpace;
+
+      if (translationWidth <= 0) return;
+
+      // 2. 处理表格列宽（最常见的场景）
+      const td = wrapper.closest('td');
+      const th = wrapper.closest('th');
+      const tableCell = td || th;
+
+      if (tableCell) {
+        const neededWidth = translationWidth + 24; // 24px padding
+
+        // 找到 Element Plus 的外层容器（同时包含 header 和 body 两个 table）
+        const elTable = tableCell.closest('.el-table');
+        if (!elTable) return;
+
+        // 确定当前列在所有列中的索引
+        const ownTable = tableCell.closest('table');
+        if (!ownTable) return;
+
+        const colgroup = ownTable.querySelector('colgroup');
+        if (!colgroup) return;
+
+        const cells = tableCell.parentNode.children;
+        const colIndex = Array.from(cells).indexOf(tableCell);
+        if (colIndex < 0) return;
+
+        // 只通过 col.width 控制列宽（兼容 Element Plus 的拖拽列宽功能）
+        // 不设置 th/td 的 min-width，避免阻止用户拖动列宽
+        // table-layout: fixed 下，col.width 直接决定列宽
+        const allTables = elTable.querySelectorAll('table');
+        allTables.forEach(tbl => {
+          const cg = tbl.querySelector('colgroup');
+          if (cg) {
+            const cols = cg.querySelectorAll('col');
+            if (colIndex < cols.length) {
+              const col = cols[colIndex];
+              const currentColWidth = parseInt(col.style.width) || parseInt(col.getAttribute('width')) || 0;
+              if (neededWidth > currentColWidth) {
+                col.style.width = neededWidth + 'px';
+              }
+            }
+          }
+        });
+
+        return;
+      }
+
+      // 3. 处理表单标签（如 "仓库" → "Warehouse"）
+      const formLabel = wrapper.closest('.el-form-item__label');
+      if (formLabel) {
+        formLabel.style.width = 'auto';
+        formLabel.style.minWidth = (translationWidth + 16) + 'px';
+        return;
+      }
+
+      // 4. 通用容器：设置 min-width 确保内容不被截断
+      const container = wrapper.closest('.el-card, .el-dialog, .el-drawer, .app-container');
+      if (container) {
+        const currentMinWidth = parseInt(getComputedStyle(container).minWidth) || 0;
+        if (translationWidth + 40 > currentMinWidth) {
+          container.style.minWidth = Math.min(translationWidth + 40, 400) + 'px';
+        }
+      }
     }
 
     // 还原：移除包裹，显示原文
@@ -525,7 +679,15 @@ export default {
       document.querySelectorAll('.translated-node').forEach(wrapper => {
         unwrapTranslation(wrapper);
       });
-      // 可保留缓存，下一次翻译更快
+      // 清理动态调整的 col 宽度（恢复原始布局）
+      document.querySelectorAll('col[style*="width"]').forEach(col => {
+        col.style.width = '';
+      });
+      document.querySelectorAll('.el-form-item__label[style*="min-width"]').forEach(label => {
+        label.style.width = '';
+        label.style.minWidth = '';
+      });
+      // 可保留缓存和样式，下一次翻译更快
     }
 
     // 启动 MutationObserver 监听动态内容
@@ -650,6 +812,31 @@ export default {
 
     // ---------- 创建浮动按钮 ----------
     function createTranslateButton(router) {
+      // 注入 loading spinner 的 CSS 动画（全局复用，避免重复注入）
+      if (!document.getElementById('__translate_spinner_style')) {
+        const spinnerStyle = document.createElement('style');
+        spinnerStyle.id = '__translate_spinner_style';
+        spinnerStyle.textContent = `
+          @keyframes __translate_spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          .__translate_spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: __translate_spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+          }
+        `;
+        document.head.appendChild(spinnerStyle);
+      }
+      const loadingHTML = '<span class="__translate_spinner"></span>Switching...';
+
       const btn = document.createElement('div');
       btn.id = '__immersive_translate_btn';
       btn.innerHTML = '🌐 中文';
@@ -658,6 +845,7 @@ export default {
         background: #4A90D9; color: #fff; padding: 10px 16px;
         border-radius: 20px; cursor: pointer; user-select: none;
         box-shadow: 0 2px 10px rgba(0,0,0,0.2); font-size: 14px;
+        display: flex; align-items: center;
       `;
 
       // 添加双击导出缓存功能
@@ -676,7 +864,7 @@ export default {
         } else {
           // 防御性编程：确保没有残留的飞行请求
           abortPendingRequests();
-          btn.innerHTML = '⏳Switching...';
+          btn.innerHTML = loadingHTML;
           btn.style.background = '#999';
           btn.style.pointerEvents = 'none';
           try {
@@ -694,6 +882,7 @@ export default {
             }*/
 
             console.log('[翻译插件] API 连接成功，开始翻译页面...');
+            injectTranslationStyles(); // 注入翻译自适应样式（容器自动扩展）
             await translatePage();
             startObserver(); // 启动监听器
             btn.innerHTML = '↩️ English';
@@ -738,7 +927,7 @@ export default {
             // 等待Vue组件渲染完成（增加重试机制）
             const retryTranslate = async (retryCount = 0) => {
               setTimeout(async () => {
-                btn.innerHTML = '⏳ Switching...';
+                btn.innerHTML = loadingHTML;
                 btn.style.background = '#999';
                 btn.style.pointerEvents = 'none';
                 try {

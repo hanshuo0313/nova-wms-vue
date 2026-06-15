@@ -19,7 +19,7 @@
         <el-table-column label="仓库名称" prop="warehouseName" />
         <el-table-column label="仓库编号" prop="warehouseCode" />
         <el-table-column label="创建时间" prop="createTime" width="180"/>
-        <el-table-column label="操作" align="right" class-name="small-padding fixed-width" width="180">
+        <el-table-column label="操作" align="left" class-name="small-padding fixed-width" width="200">
           <template #default="scope">
             <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['wms:itemBrand:edit']">修改</el-button>
             <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['wms:itemBrand:remove']">删除</el-button>

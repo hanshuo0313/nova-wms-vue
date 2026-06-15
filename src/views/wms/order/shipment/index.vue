@@ -166,7 +166,7 @@
           </template>
         </el-table-column>
         <el-table-column label="备注" prop="remark" />
-        <el-table-column label="操作" align="right" class-name="small-padding fixed-width" width="120">
+        <el-table-column label="操作" align="left" class-name="small-padding fixed-width" width="150">
           <template #default="scope">
             <div>
               <el-popover

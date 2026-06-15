@@ -25,123 +25,126 @@
       </el-form>
     </el-card>
     <el-card class="mt20">
-      <div style="display: flex;align-items: start">
-        <div>
-          <div style="display: flex;align-items: center;justify-content: space-between">
-            <span style="font-size: 18px;line-height: 18px">商品分类</span>
-            <el-button class="mr10" style="font-size:12px;line-height: 14px" plain
-                     @click="handleAddType(false)"
-                     type="primary" icon="Plus">新增分类
-            </el-button>
-          </div>
-          <el-tree
-            :data="itemCategoryTreeOptionsList"
-            :props="{ value: 'id', label: 'label', children: 'children' }"
-            value-key="id"
-            style="width: 400px;"
-            class="mr10 mt10"
-            @nodeClick="handleQueryType"
-            :default-expand-all="true"
-            :highlight-current="true"
-            node-key="label"
-            current-node-key="全部"
-            draggable
-            :allow-drop="collapse"
-            @node-drop="handleNodeDrop"
-            :expand-on-click-node="false"
-          >
-            <template #default="{ node, data }">
-            <span class="custom-tree-node">
-              <span>{{ node.label }}</span>
-              <span>
-                <el-button type="primary" @click.stop="append(data)" link
-                         v-if="data.label !== '全部' && node.level < 2" icon="Plus" style="font-size: 12px">新增子分类</el-button>
-                <el-button type="primary" @click.stop="remove(node, data)" link
-                         v-if="data.label !== '全部'" icon="Delete" style="font-size: 12px">删除</el-button>
-                <el-button type="primary" icon="Edit" @click.stop="edit(node, data)" link
-                         v-if="data.label !== '全部'" style="font-size: 12px">修改</el-button>
-              </span>
-            </span>
-            </template>
-          </el-tree>
-        </div>
-        <div style="width: 100%;position: relative">
-          <div style="display: flex;align-items: start;justify-content: space-between">
-            <span class="mr10" style="font-size: 18px;">商品列表</span>
+      <div>
+        <div style="display: flex;align-items: start;justify-content: space-between">
+          <span class="mr10" style="font-size: 18px;">商品列表</span>
+          <div>
+            <el-button type="primary" plain icon="FolderOpened" @click="categoryDrawerVisible = true" class="mb10">商品分类</el-button>
             <el-button type="primary" plain icon="Plus" @click="handleAdd" class="mb10">新增商品</el-button>
           </div>
-          <el-table :data="itemList" @selection-change="handleSelectionChange" :span-method="spanMethod" border empty-text="暂无商品" v-loading="loading" cell-class-name="my-cell">
-            <el-table-column label="商品信息" prop="itemId">
-              <template #default="{ row }">
-                <div>{{ row.item.itemName + (row.item.itemCode ? ('(' +  row.item.itemCode + ')') : '') }}</div>
-                <div v-if="row.item.itemBrand">{{ row.item.itemBrand ? ('品牌：' + useWmsStore().itemBrandMap.get(row.item.itemBrand)?.brandName) : '' }}</div>
-                <div v-if="row.item.itemCategory">{{ row.item.itemCategory ? ('分类：' + useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName) : '' }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column label="规格信息" prop="skuName" align="left">
-              <template #default="{ row }">
-                <div>{{ row.itemSku.skuName }}</div>
-                <div v-if="row.itemSku.skuCode">编号/条码：{{ row.itemSku.skuCode }}</div>
-<!--                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
-              </template>
-            </el-table-column>
-            <el-table-column label="金额(元)" width="160" align="left">
-              <template #default="{ row }">
-                <div v-if="row.itemSku.costPrice" class="flex-space-between">
-                  <span>成本价：</span>
-                  <div>{{ (row.itemSku.costPrice || row.itemSku.costPrice === 0) ? row.itemSku.costPrice : '' }}</div>
-                </div>
-                <div v-if="row.itemSku.sellingPrice" class="flex-space-between">
-                  <span>销售价：</span>
-                  <div>{{ (row.itemSku.sellingPrice || row.itemSku.sellingPrice === 0) ? row.itemSku.sellingPrice : '' }}</div>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="重量(kg)" width="160" align="left">
-              <template #default="{ row }">
-                <div v-if="row.itemSku.netWeight" class="flex-space-between">
-                  <span>净重：</span>
-                  <div>
-                    {{ (row.itemSku.netWeight || row.itemSku.netWeight === 0) ? row.itemSku.netWeight : '' }}
-                  </div>
-                </div>
-                <div v-if="row.itemSku.grossWeight" class="flex-space-between">
-                  <span>毛重：</span>
-                  <div>
-                    {{ (row.itemSku.grossWeight || row.itemSku.grossWeight === 0) ? row.itemSku.grossWeight : '' }}
-                  </div>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="长宽高(cm)" align="right" width="250">
-              <template #default="{ row }">
-                <div>{{ getVolumeText(row.itemSku) }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column label="下载条码" align="right"  width="106">
-              <template #default="{ row }">
-                <div v-if="row.itemSku.skuCode">
-                  <el-button link type="primary" @click="openBatchDownloadDialog(row, 'barcode')" icon="Download">下载条码</el-button>
-                </div>
-                <div v-if="row.itemSku.skuCode">
-                  <el-button link type="primary" @click="openBatchDownloadDialog(row, 'qrcode')" icon="Download">下载二维码</el-button>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" align="right" prop="itemId" width="90">
-              <template #default="scope">
-<!--                <el-button link type="primary" @click="downloadBarcode(scope.row)" icon="Download" v-if="scope.row.itemSku.barcode">下载条码</el-button>
-                <el-button link type="primary" @click="downloadQrcode(scope.row)" icon="Download" v-if="scope.row.itemSku.barcode">下载二维码</el-button>-->
-                <el-button link type="primary" @click="handleDelete(scope.row)" icon="Delete">删除</el-button>
-                <el-button link type="primary" @click="handleUpdate(scope.row)" icon="Edit">修改</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <pagination v-show="total>0" :total="total" v-model:page="queryParams.pageNum"
-                      v-model:limit="queryParams.pageSize" @pagination="getList"/>
         </div>
+        <el-table :data="itemList" @selection-change="handleSelectionChange" :span-method="spanMethod" border empty-text="暂无商品" v-loading="loading" cell-class-name="my-cell">
+          <el-table-column label="商品信息" prop="itemId">
+            <template #default="{ row }">
+              <div>{{ row.item.itemName + (row.item.itemCode ? ('(' +  row.item.itemCode + ')') : '') }}</div>
+              <div v-if="row.item.itemBrand">{{ row.item.itemBrand ? ('品牌：' + useWmsStore().itemBrandMap.get(row.item.itemBrand)?.brandName) : '' }}</div>
+              <div v-if="row.item.itemCategory">{{ row.item.itemCategory ? ('分类：' + useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName) : '' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="规格信息" prop="skuName" align="left">
+            <template #default="{ row }">
+              <div>{{ row.itemSku.skuName }}</div>
+              <div v-if="row.itemSku.skuCode">编号/条码：{{ row.itemSku.skuCode }}</div>
+<!--                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
+            </template>
+          </el-table-column>
+          <el-table-column label="金额(元)" width="160" align="left">
+            <template #default="{ row }">
+              <div v-if="row.itemSku.costPrice" class="flex-space-between">
+                <span>成本价：</span>
+                <div>{{ (row.itemSku.costPrice || row.itemSku.costPrice === 0) ? row.itemSku.costPrice : '' }}</div>
+              </div>
+              <div v-if="row.itemSku.sellingPrice" class="flex-space-between">
+                <span>销售价：</span>
+                <div>{{ (row.itemSku.sellingPrice || row.itemSku.sellingPrice === 0) ? row.itemSku.sellingPrice : '' }}</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="重量(kg)" width="160" align="left">
+            <template #default="{ row }">
+              <div v-if="row.itemSku.netWeight" class="flex-space-between">
+                <span>净重：</span>
+                <div>
+                  {{ (row.itemSku.netWeight || row.itemSku.netWeight === 0) ? row.itemSku.netWeight : '' }}
+                </div>
+              </div>
+              <div v-if="row.itemSku.grossWeight" class="flex-space-between">
+                <span>毛重：</span>
+                <div>
+                  {{ (row.itemSku.grossWeight || row.itemSku.grossWeight === 0) ? row.itemSku.grossWeight : '' }}
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="长宽高(cm)" align="left" width="160">
+            <template #default="{ row }">
+              <div>{{ getVolumeText(row.itemSku) }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="下载条码" align="left"  width="170">
+            <template #default="{ row }">
+              <div v-if="row.itemSku.skuCode">
+                <el-button link type="primary" @click="openBatchDownloadDialog(row, 'barcode')" icon="Download">下载条码</el-button>
+              </div>
+              <div v-if="row.itemSku.skuCode">
+                <el-button link type="primary" @click="openBatchDownloadDialog(row, 'qrcode')" icon="Download">下载二维码</el-button>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" align="left" prop="itemId" width="120">
+            <template #default="scope">
+              <div>
+                <el-button link type="primary" @click="handleDelete(scope.row)" icon="Delete">删除</el-button>
+              </div>
+              <div>
+                <el-button link type="primary" @click="handleUpdate(scope.row)" icon="Edit">修改</el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+        <pagination v-show="total>0" :total="total" v-model:page="queryParams.pageNum"
+                    v-model:limit="queryParams.pageSize" @pagination="getList"/>
       </div>
     </el-card>
+
+    <!-- 商品分类抽屉 -->
+    <el-drawer title="商品分类" v-model="categoryDrawerVisible" direction="rtl" size="600px" append-to-body>
+      <div style="display: flex;align-items: center;justify-content: flex-end;margin-bottom: 10px;">
+        <el-button style="font-size:12px;line-height: 14px" plain
+                 @click="handleAddType(false)"
+                 type="primary" icon="Plus">新增分类
+        </el-button>
+      </div>
+      <el-tree
+        :data="itemCategoryTreeOptionsList"
+        :props="{ value: 'id', label: 'label', children: 'children' }"
+        value-key="id"
+        class="mr10 mt10"
+        @nodeClick="handleQueryType"
+        :default-expand-all="true"
+        :highlight-current="true"
+        node-key="label"
+        current-node-key="全部"
+        draggable
+        :allow-drop="collapse"
+        @node-drop="handleNodeDrop"
+        :expand-on-click-node="false"
+      >
+        <template #default="{ node, data }">
+        <span class="custom-tree-node">
+          <span>{{ node.label }}</span>
+          <span>
+            <el-button type="primary" @click.stop="append(data)" link
+                     v-if="data.label !== '全部' && node.level < 2" icon="Plus" style="font-size: 12px">新增子分类</el-button>
+            <el-button type="primary" @click.stop="remove(node, data)" link
+                     v-if="data.label !== '全部'" icon="Delete" style="font-size: 12px">删除</el-button>
+            <el-button type="primary" icon="Edit" @click.stop="edit(node, data)" link
+                     v-if="data.label !== '全部'" style="font-size: 12px">修改</el-button>
+          </span>
+        </span>
+        </template>
+      </el-tree>
+    </el-drawer>
     <!-- 添加或修改物料对话框 -->
     <el-drawer :title="dialog.title" v-model="dialog.visible" size="80%" append-to-body :close-on-click-modal="false">
       <div v-loading="skuLoading">
@@ -420,6 +423,7 @@ const single = ref(true);
 const multiple = ref(true);
 const total = ref(0);
 const skuLoading = ref(false)
+const categoryDrawerVisible = ref(false)
 const queryFormRef = ref(ElForm);
 const itemFormRef = ref(ElForm);
 const itemCategoryFormRef = ref(ElForm);
