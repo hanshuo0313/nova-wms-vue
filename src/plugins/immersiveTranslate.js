@@ -1,5 +1,6 @@
 // src/plugins/immersiveTranslate.js
 import axios from 'axios';
+import { getEnabled as fetchGlossary } from '@/api/wms/glossary';
 
 export default {
   install(app, options = {}) {
@@ -7,12 +8,21 @@ export default {
       apiEndpoint = 'http://localhost:5000/translate',
       sourceLang = 'zh',
       targetLang = 'en',
+      languages = [
+        { code: 'zh', label: '中文', flag: '🇨🇳' },
+        { code: 'en', label: 'English', flag: '🇬🇧' },
+        { code: 'ja', label: '日本語', flag: '🇯🇵' },
+        { code: 'ko', label: '한국어', flag: '🇰🇷' }
+      ],
       cacheEnabled = true,
       excludeSelectors = 'script, style, code, pre, .no-translate, .el-pagination, .pagination-container',
       autoTranslateOnRouteChange = false,
-      persistentCache = true, // 新增：是否启用持久化缓存
-      cacheStorageKey = 'translation_cache_v1' // 新增：localStorage 键名
+      persistentCache = true,
+      cacheStorageKey = 'translation_cache_v1'
     } = options;
+
+    // 当前实际使用的目标语言（可动态切换）
+    let currentTargetLang = targetLang;
 
     // 创建独立的 axios 实例（避免被项目拦截器干扰）
     const translateAxios = axios.create({
@@ -131,6 +141,44 @@ export default {
       return abortController;
     }
 
+    // ---------- 术语词典（从后端 API 动态加载） ----------
+    const glossaryMap = new Map(); // 运行时词典：中文 -> 英文
+
+    /**
+     * 从后端 API 加载术语词典
+     * 后端需返回格式：{ code: 200, data: { "中文": "English", ... } }
+     * 支持 localStorage 缓存，下次启动秒加载
+     * 多语言：每种 targetLang 独立缓存，互不干扰
+     */
+    async function loadGlossary() {
+      // 1. 先从 localStorage 快速加载（每种语言独立 key）
+      const CACHE_KEY = `translation_glossary_v1_${currentTargetLang}`;
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const data = JSON.parse(cached);
+          Object.entries(data).forEach(([zh, translated]) => glossaryMap.set(zh.trim(), translated));
+          console.log(`[翻译插件] 词典[${currentTargetLang}]从缓存加载，共 ${glossaryMap.size} 条`);
+        }
+      } catch (e) { /* 忽略缓存读取错误 */ }
+
+      // 2. 从后端 API 更新（使用带 Token 的请求工具）
+      try {
+        const res = await fetchGlossary(currentTargetLang);
+        const data = res?.data || res?.rows || null;
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          glossaryMap.clear();
+          Object.entries(data).forEach(([zh, translated]) => glossaryMap.set(zh.trim(), translated));
+          localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+          console.log(`[翻译插件] 词典[${currentTargetLang}]从 API 更新，共 ${glossaryMap.size} 条`);
+        } else {
+          console.warn(`[翻译插件] 词典[${currentTargetLang}] API 返回格式异常:`, res);
+        }
+      } catch (e) {
+        console.warn(`[翻译插件] 词典[${currentTargetLang}] API 请求失败，使用缓存版本`, e.message);
+      }
+    }
+
     // ---------- 增量翻译优化：去重、微批次、重试 ----------
     const pendingTranslations = new Map(); // text -> Promise<translation> 去重正在飞行的请求
     const INCREMENTAL_BATCH_SIZE = 2; // 增量翻译每批条数（LibreTranslate 逐行处理，批次越大越慢）
@@ -157,7 +205,7 @@ export default {
           const response = await translateAxios.post(apiEndpoint, {
             q: text,
             source: sourceLang,
-            target: targetLang,
+            target: currentTargetLang,
             format: 'text'
           }, { timeout: singleTimeout, signal: controller.signal });
           const result = response.data.translatedText || text;
@@ -195,7 +243,7 @@ export default {
         const response = await translateAxios.post(apiEndpoint, {
           q: combined,
           source: sourceLang,
-          target: targetLang,
+          target: currentTargetLang,
           format: 'text'
         }, { timeout: INCREMENTAL_TIMEOUT, signal: controller.signal });
 
@@ -229,14 +277,19 @@ export default {
     // 增量翻译：批量发送（带去重 + 小批次 + 短超时 + 重试）
     async function translateIncrementalBatch(items) {
       // items: [{textNode, original}]
-      // 1. 快速缓存路径：先查缓存，命中直接包装
+      // 1. 快速缓存路径：先查词典、缓存，命中直接包装
       const uncached = [];
       items.forEach(item => {
+        const trimmed = item.original.trim();
         if (isNonTranslatable(item.original)) {
           // 不需要翻译的文本，跳过
           return;
         }
-        if (cacheEnabled && translationCache.has(item.original)) {
+        if (glossaryMap.has(trimmed)) {
+          // 词典命中，直接包装
+          if (cacheEnabled) translationCache.set(item.original, glossaryMap.get(trimmed));
+          wrapWithTranslation(item.textNode, item.original, glossaryMap.get(trimmed));
+        } else if (cacheEnabled && translationCache.has(item.original)) {
           wrapWithTranslation(item.textNode, item.original, translationCache.get(item.original));
         } else {
           uncached.push(item);
@@ -282,39 +335,50 @@ export default {
       }
     }
 
-    // ---------- 持久化缓存管理 ----------
-    function loadPersistentCache() {
+    // ---------- 持久化缓存管理（按语言隔离） ----------
+    function getCacheKey(lang) {
+      return `${cacheStorageKey}_${lang}`;
+    }
+
+    function loadPersistentCache(lang) {
       try {
-        const cached = localStorage.getItem(cacheStorageKey);
+        const cached = localStorage.getItem(getCacheKey(lang || currentTargetLang));
         if (cached) {
           const parsed = JSON.parse(cached);
           Object.entries(parsed).forEach(([key, value]) => {
             translationCache.set(key, value);
           });
-          console.log(`[翻译插件] 已加载 ${translationCache.size} 条缓存记录`);
+          console.log(`[翻译插件] 已加载缓存[${lang || currentTargetLang}]，共 ${translationCache.size} 条`);
         }
       } catch (e) {
         console.warn('[翻译插件] 加载持久化缓存失败:', e);
       }
     }
 
-    function savePersistentCache() {
+    function savePersistentCache(lang) {
       if (!persistentCache || !cacheEnabled) return;
-
       try {
         const cacheObj = {};
         translationCache.forEach((value, key) => {
           cacheObj[key] = value;
         });
-        localStorage.setItem(cacheStorageKey, JSON.stringify(cacheObj));
-        console.log(`[翻译插件] 已保存 ${translationCache.size} 条缓存记录`);
+        localStorage.setItem(getCacheKey(lang || currentTargetLang), JSON.stringify(cacheObj));
+        console.log(`[翻译插件] 已保存缓存[${lang || currentTargetLang}]，共 ${translationCache.size} 条`);
       } catch (e) {
         console.warn('[翻译插件] 保存持久化缓存失败:', e);
-        // 如果超出 localStorage 限制，清理旧缓存
         if (e.name === 'QuotaExceededError') {
           clearOldCache();
         }
       }
+    }
+
+    // 切换语言时交换缓存：保存旧语言 → 清空 → 加载新语言
+    function swapCacheForLanguage(oldLang, newLang) {
+      savePersistentCache(oldLang);    // 保存旧语言缓存
+      translationCache.clear();        // 清空内存
+      glossaryMap.clear();             // 清空词典
+      loadPersistentCache(newLang);    // 加载新语言缓存
+      console.log(`[翻译插件] 缓存切换: ${oldLang} → ${newLang}`);
     }
 
     function clearOldCache() {
@@ -506,9 +570,15 @@ export default {
       const results = [];
       const toTranslate = [];
 
-      // 先查缓存，并过滤纯数字或主要包含数字的文本
+      // 先查词典、缓存，并过滤纯数字或主要包含数字的文本
       texts.forEach((text, index) => {
-        if (isNonTranslatable(text)) {
+        const trimmed = text.trim();
+        if (glossaryMap.has(trimmed)) {
+          // 词典命中：直接使用标准译文，不走 API
+          results[index] = glossaryMap.get(trimmed);
+          // 写入缓存，后续相同文本不再翻译
+          if (cacheEnabled) translationCache.set(text, glossaryMap.get(trimmed));
+        } else if (isNonTranslatable(text)) {
           results[index] = text;
         } else if (cacheEnabled && translationCache.has(text)) {
           results[index] = translationCache.get(text);
@@ -538,7 +608,7 @@ export default {
             const response = await translateAxios.post(apiEndpoint, {
               q: combined,
               source: sourceLang,
-              target: targetLang,
+              target: currentTargetLang,
               format: 'text'
             }, { timeout: batchTimeout, signal: controller.signal });
 
@@ -710,12 +780,10 @@ export default {
           // 处理新增节点
           if (mutation.type === 'childList') {
             mutation.addedNodes.forEach(node => {
-              // 只处理元素节点，且排除已翻译的节点和分页控件
+              // 只处理元素节点，且排除已翻译的节点和翻译按钮
               if (node.nodeType === Node.ELEMENT_NODE &&
                 !node.classList?.contains('translated-node') &&
-                !node.closest?.('#__immersive_translate_btn') &&
-                !node.closest?.('.el-pagination') &&
-                !node.closest?.('.pagination-container')) {
+                !node.closest?.('#__immersive_translate_btn')) {
 
                 // 检查是否是表格行或表格单元格
                 if (node.closest?.('.el-table__body') ||
@@ -734,8 +802,6 @@ export default {
             if (parent &&
               !parent.closest('.translated-node') &&
               !parent.closest('#__immersive_translate_btn') &&
-              !parent.closest('.el-pagination') &&
-              !parent.closest('.pagination-container') &&
               mutation.target.textContent.trim()) {
 
               // 检查是否在表格内
@@ -843,83 +909,154 @@ export default {
       }
       const loadingHTML = '<span class="__translate_spinner"></span>Switching...';
 
-      const btn = document.createElement('div');
-      btn.id = '__immersive_translate_btn';
-      btn.innerHTML = '🌐 中文';
-      btn.style.cssText =
-        `position: fixed; top: 6px; right: 80px; z-index: 99999;
-        background: #4A90D9; color: #fff; padding: 10px 16px;
-        border-radius: 20px; cursor: pointer; user-select: none;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2); font-size: 14px;
-        display: flex; align-items: center;
+      // ---------- 多语言选择器 ----------
+      const container = document.createElement('div');
+      container.id = '__immersive_translate_btn';
+      container.style.cssText = `
+        position: fixed; top: 6px; right: 80px; z-index: 99999;
+        font-size: 14px; user-select: none;
       `;
 
-      // 添加双击导出缓存功能
-      btn.addEventListener('dblclick', () => {
+      // 主按钮
+      const btn = document.createElement('div');
+      btn.innerHTML = '🌐 中文';
+      btn.style.cssText = `
+        background: #4A90D9; color: #fff; padding: 10px 16px;
+        border-radius: 20px; cursor: pointer;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        display: flex; align-items: center; gap: 6px;
+        transition: background 0.2s;
+      `;
+
+      // 下拉菜单
+      const dropdown = document.createElement('div');
+      dropdown.style.cssText = `
+        display: none; position: absolute; top: 100%; right: 0;
+        margin-top: 6px; background: #fff; border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15); overflow: hidden;
+        min-width: 160px;
+      `;
+
+      // 生成语言选项
+      languages.forEach(lang => {
+        const item = document.createElement('div');
+        item.innerHTML = `<span style="margin-right:8px">${lang.flag}</span>${lang.label}`;
+        item.style.cssText = `
+          padding: 10px 16px; cursor: pointer; color: #333;
+          display: flex; align-items: center;
+          transition: background 0.15s;
+        `;
+        item.addEventListener('mouseenter', () => item.style.background = '#f0f4ff');
+        item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+
+        item.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          dropdown.style.display = 'none';
+          await switchLanguage(lang);
+        });
+        dropdown.appendChild(item);
+      });
+
+      container.appendChild(btn);
+      container.appendChild(dropdown);
+
+      // 点击按钮展开/收起下拉
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+      });
+
+      // 点击页面其他区域关闭下拉
+      document.addEventListener('click', () => {
+        dropdown.style.display = 'none';
+      });
+
+      // 双击导出缓存
+      btn.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
         exportCacheToFile();
       });
 
-      btn.addEventListener('click', async () => {
+      // 切换语言核心逻辑
+      async function switchLanguage(lang) {
+        if (lang.code === sourceLang) {
+          // 选择原文语言：恢复中文
+          if (isTranslated) {
+            restorePage();
+            abortPendingRequests();
+            stopObserver();
+            btn.innerHTML = `🌐 ${lang.flag} ${lang.label}`;
+            btn.style.background = '#4A90D9';
+            isTranslated = false;
+          }
+          return;
+        }
+
+        // 切换到其他语言
+        const oldLang = currentTargetLang;
+        currentTargetLang = lang.code;
+        abortPendingRequests();
+
+        // 如果已翻译，先恢复原文
         if (isTranslated) {
           restorePage();
-          abortPendingRequests(); // 取消所有飞行中的请求
           stopObserver();
-          btn.innerHTML = '🌐 中文';
-          btn.style.background = '#4A90D9';
-          isTranslated = false;
-        } else {
-          // 防御性编程：确保没有残留的飞行请求
-          abortPendingRequests();
-          btn.innerHTML = loadingHTML;
-          btn.style.background = '#999';
-          btn.style.pointerEvents = 'none';
-          try {
-            // 先测试 API 连接（使用独立实例，增加超时时间）
-            /*console.log('[翻译插件] 测试 API 连接...');
-            const testResponse = await translateAxios.post(apiEndpoint, {
-              q: '测试',
-              source: sourceLang,
-              target: targetLang,
-              format: 'text'
-            }, { timeout: 30000 });
-
-            if (!testResponse.data.translatedText) {
-              throw new Error('API 返回数据格式错误');
-            }*/
-
-            console.log('[翻译插件] API 连接成功，开始翻译页面...');
-            injectTranslationStyles(); // 注入翻译自适应样式（容器自动扩展）
-            await translatePage();
-            startObserver(); // 启动监听器
-            btn.innerHTML = '↩️ English';
-            btn.style.background = '#E67E22';
-          } catch (e) {
-            console.error('[翻译插件] 详细错误:', e);
-            let errorMsg = '❌ 失败/fail';
-
-            if (e.code === 'ECONNABORTED' || e.message.includes('timeout')) {
-              errorMsg = '❌ 超时/Timeout';
-              alert(`翻译超时！\n\n可能原因:\n1. LibreTranslate 首次加载模型较慢（需 10-30 秒）\n2. Docker 容器未启动\n3. 服务器资源不足\n\n建议:\n- 等待 1-2 分钟后重试\n- 检查 Docker 日志: docker logs <容器ID>`);
-            } else if (e.response?.status === 404) {
-              errorMsg = '❌ API路径错误';
-            } else if (e.response?.status === 500) {
-              errorMsg = '❌ 服务器错误';
-            } else if (e.message.includes('Network Error')) {
-              errorMsg = '❌ 网络错误';
-            }
-
-            btn.innerHTML = errorMsg;
-            btn.style.background = '#E74C3C';
-
-            // 显示详细错误提示
-            alert(`翻译失败！\n\n错误类型: ${e.message}\n\n请检查:\n1. LibreTranslate 服务是否启动\n2. 浏览器控制台查看详细错误`);
-          }
-          btn.style.pointerEvents = 'auto';
-          isTranslated = true;
         }
-      });
 
-      document.body.appendChild(btn);
+        // 交换缓存：保存旧语言 → 清空 → 加载新语言
+        swapCacheForLanguage(oldLang, lang.code);
+
+        btn.innerHTML = loadingHTML;
+        btn.style.background = '#999';
+        btn.style.pointerEvents = 'none';
+
+        try {
+          injectTranslationStyles();
+          await loadGlossary();
+          await translatePage();
+          startObserver();
+
+          const langLabel = languages.find(l => l.code === lang.code)?.label || lang.code;
+          const langFlag = languages.find(l => l.code === lang.code)?.flag || '🌐';
+          btn.innerHTML = `🌐 ${langFlag} ${langLabel}`;
+          btn.style.background = '#E67E22';
+
+          // 延迟补扫
+          setTimeout(async () => {
+            await translateNewNode(document.body);
+            const placeholderEls = document.querySelectorAll('[placeholder]');
+            let phCount = 0;
+            placeholderEls.forEach(el => {
+              const orig = el.getAttribute('placeholder');
+              if (orig && glossaryMap.has(orig.trim())) {
+                el.setAttribute('placeholder', glossaryMap.get(orig.trim()));
+                phCount++;
+              }
+            });
+            console.log(`[翻译插件] placeholder 补扫完成，命中词典 ${phCount} 个`);
+          }, 600);
+
+          isTranslated = true;
+        } catch (e) {
+          console.error('[翻译插件] 详细错误:', e);
+          let errorMsg = '❌ 失败';
+          if (e.code === 'ECONNABORTED' || e.message.includes('timeout')) {
+            errorMsg = '❌ 超时';
+          } else if (e.response?.status === 404) {
+            errorMsg = '❌ API路径错误';
+          } else if (e.response?.status === 500) {
+            errorMsg = '❌ 服务器错误';
+          } else if (e.message.includes('Network Error')) {
+            errorMsg = '❌ 网络错误';
+          }
+          btn.innerHTML = errorMsg;
+          btn.style.background = '#E74C3C';
+          alert(`翻译失败！\n\n错误类型: ${e.message}\n\n请检查:\n1. CTranslate2 服务是否启动\n2. 浏览器控制台查看详细错误`);
+        }
+        btn.style.pointerEvents = 'auto';
+      }
+
+      document.body.appendChild(container);
 
       // 如果启用了路由切换自动翻译，监听路由变化
       if (router && autoTranslateOnRouteChange) {
@@ -937,22 +1074,21 @@ export default {
                 btn.style.background = '#999';
                 btn.style.pointerEvents = 'none';
                 try {
-                  //await translatePage(); // 会重新扫描整个页面，包括已翻译的部分
                   await translateNewNode(document.body); // 只翻译未被翻译的节点
                   startObserver(); // 重新启动监听器
-                  btn.innerHTML = '↩️ English';
+                  const langInfo = languages.find(l => l.code === currentTargetLang) || languages[1];
+                  btn.innerHTML = `🌐 ${langInfo.flag} ${langInfo.label}`;
                   btn.style.background = '#E67E22';
                 } catch (e) {
                   if (retryCount < 3) {
-                    // 最多重试3次
                     retryTranslate(retryCount + 1);
                   } else {
-                    btn.innerHTML = '❌ 失败/fail';
+                    btn.innerHTML = '❌ 失败';
                     btn.style.background = '#E74C3C';
                   }
                 }
                 btn.style.pointerEvents = 'auto';
-              }, 300 + retryCount * 200); // 递增延迟：300ms, 500ms, 700ms, 900ms
+              }, 300 + retryCount * 200);
             };
 
             retryTranslate();

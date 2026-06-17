@@ -91,13 +91,17 @@ app._context.components.ElDialog.props.closeOnClickModal.default = false
 
 //翻译API
 app.use(immersiveTranslate, {
-  apiEndpoint: '/translate-api', // 使用本地代理，避免CORS问题
+  apiEndpoint: '/translate-api',
   sourceLang: 'zh',
-  targetLang: 'en',
-  cacheEnabled: true,
-  autoTranslateOnRouteChange: true, // 启用路由切换时自动翻译
-  persistentCache: true, // 启用持久化缓存（新增）
-  cacheStorageKey: 'translation_cache_v1' // localStorage 键名（新增）
+  targetLang: 'en', // 默认选中语言
+  languages: [
+    { code: 'zh', label: '中文',    flag: '🇨🇳' },
+    { code: 'en', label: 'English', flag: '🇬🇧' },
+    { code: 'ja', label: '日本語',  flag: '🇯🇵' },
+    { code: 'ko', label: '한국어',  flag: '🇰🇷' },
+    // 可以继续添加更多语言
+  ],
+  autoTranslateOnRouteChange: true,
 })
 
 app.mount('#app')

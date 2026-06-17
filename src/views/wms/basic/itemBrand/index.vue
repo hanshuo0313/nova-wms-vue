@@ -45,7 +45,7 @@
 
     </el-card>
     <!-- 添加或修改商品品牌对话框 -->
-    <el-dialog :title="title" v-model="open" width="20%" append-to-body>
+    <el-dialog :title="title" v-model="open" width="24%" append-to-body>
       <el-form ref="itemBrandRef" :model="form" :rules="rules" label-width="80px">
         <el-form-item label="品牌名称" prop="brandName">
           <el-input v-model="form.brandName" placeholder="请输入品牌名称" />

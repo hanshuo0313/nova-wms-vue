@@ -634,38 +634,9 @@ function handleDelete(row) {
 
 /** 导出按钮操作 */
 function handleExport() {
-  loading.value = true;
-  listLocation({
-    ...queryParams.value,
-    pageNum: 1,
-    pageSize: 99999
-  }).then(response => {
-    const data = response.rows || [];
-
-    // 转换数据格式
-    const exportData = data.map((item, index) => ({
-      '序号': index + 1,
-      '所属仓库': getWarehouseName(item.warehouseId),
-      '库位编号': item.stockCode,
-      '库位状态': getStatusText(item.status)
-    }));
-
-    // 创建工作簿和工作表
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'location');
-
-    // 生成Excel文件并下载
-    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
-    saveAs(blob, `location_${new Date().getTime()}.xlsx`);
-
-    loading.value = false;
-    proxy.$modal.msgSuccess('导出成功');
-  }).catch(() => {
-    loading.value = false;
-    proxy.$modal.msgError('导出失败');
-  });
+  proxy.download('wms/location/export', {
+    ...queryParams.value
+  }, `location_${new Date().getTime()}.xlsx`)
 }
 
 // 获取状态文本
