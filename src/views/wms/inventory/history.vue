@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-card>
-      <el-form :model="queryParams" ref="queryRef" :inline="true" label-width="68px">
+      <el-form :model="queryParams" ref="queryRef" :inline="true" label-width="68px" style="display: flex; flex-wrap: wrap; align-items: flex-start;">
         <el-form-item label="订单类型" prop="orderType">
           <el-radio-group v-model="queryParams.orderType" @change="handleQuery">
             <el-radio-button
@@ -54,7 +54,7 @@
             end-placeholder="结束时间"
           />
         </el-form-item>
-        <el-form-item>
+        <el-form-item style="margin-left: auto">
           <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
           <el-button icon="Refresh" @click="resetQuery">重置</el-button>
         </el-form-item>

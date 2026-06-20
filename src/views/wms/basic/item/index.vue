@@ -18,6 +18,16 @@
             ></el-option>
           </el-select>
         </el-form-item>
+        <el-form-item label="商品单位" prop="unit">
+          <el-select v-model="queryParams.unit" clearable filterable placeholder="请选择单位">
+            <el-option
+              v-for="item in useWmsStore().merchantList"
+              :key="item.id"
+              :label="item.merchantName"
+              :value="item.id"
+            ></el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
           <el-button icon="Refresh" @click="resetQuery">重置</el-button>
@@ -31,24 +41,71 @@
           <div>
             <el-button type="primary" plain icon="FolderOpened" @click="categoryDrawerVisible = true" class="mb10">商品分类</el-button>
             <el-button type="primary" plain icon="Plus" @click="handleAdd" class="mb10">新增商品</el-button>
+            <el-button type="primary" plain icon="Download" :disabled="selectedRows.length === 0" @click="handleDownloadProductCode" class="mb10">
+              下载商品码{{ selectedRows.length > 0 ? `(${selectedRows.length})` : '' }}
+            </el-button>
+            <el-button type="primary" plain icon="Download" :disabled="selectedRows.length === 0" @click="handleBatchDownloadBarcode" class="mb10">
+              下载规格条码{{ selectedRows.length > 0 ? `(${selectedRows.length})` : '' }}
+            </el-button>
+            <el-button type="primary" plain icon="Download" @click="handleExport" :loading="exportLoading" class="mb10">导出Excel</el-button>
+<!--            <el-button type="primary" plain icon="Download" :disabled="selectedRows.length === 0" @click="handleBatchDownloadQrcode" class="mb10">
+              下载二维码{{ selectedRows.length > 0 ? `(${selectedRows.length})` : '' }}
+            </el-button>-->
           </div>
         </div>
         <el-table :data="itemList" @selection-change="handleSelectionChange" :span-method="spanMethod" border empty-text="暂无商品" v-loading="loading" cell-class-name="my-cell">
-          <el-table-column label="商品信息" prop="itemId">
+          <el-table-column type="selection" width="55" />
+          <el-table-column label="商品图片" align="center" width="80">
             <template #default="{ row }">
-              <div>{{ row.item.itemName + (row.item.itemCode ? ('(' +  row.item.itemCode + ')') : '') }}</div>
-              <div v-if="row.item.itemBrand">{{ row.item.itemBrand ? ('品牌：' + useWmsStore().itemBrandMap.get(row.item.itemBrand)?.brandName) : '' }}</div>
-              <div v-if="row.item.itemCategory">{{ row.item.itemCategory ? ('分类：' + useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName) : '' }}</div>
+              <el-image
+                v-if="hasValidImage(row)"
+                :src="itemImageUrls[row.item.id][0]"
+                :preview-src-list="itemImageUrls[row.item.id]"
+                fit="cover"
+                style="width: 50px; height: 50px;"
+                preview-teleported
+                @error="handleImageError(row)"
+              />
             </template>
           </el-table-column>
-          <el-table-column label="规格信息" prop="skuName" align="left">
+          <el-table-column label="商品名称" prop="itemId" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.item.itemName }}
+            </template>
+          </el-table-column>
+          <el-table-column label="商品编号" prop="itemId" align="center" min-width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.item.itemCode }}
+            </template>
+          </el-table-column>
+          <el-table-column label="商品单位" prop="itemId" align="center" min-width="90" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="商品分类" prop="itemId" align="center" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName : '' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="商品品牌" prop="itemId" align="center" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.item.itemBrand ? useWmsStore().itemBrandMap.get(row.item.itemBrand)?.brandName : '' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="商品级别" prop="itemId" align="center" width="90">
+            <template #default="{ row }">
+              <dict-tag :options="product_level" :value="row.item.itemLevel"/>
+            </template>
+          </el-table-column>
+          <el-table-column label="规格信息" prop="skuName" align="left" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               <div>{{ row.itemSku.skuName }}</div>
-              <div v-if="row.itemSku.skuCode">编号/条码：{{ row.itemSku.skuCode }}</div>
+              <div v-if="row.itemSku.skuCode">编号：{{ row.itemSku.skuCode }}</div>
 <!--                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
             </template>
           </el-table-column>
-          <el-table-column label="金额(元)" width="160" align="left">
+          <el-table-column label="金额(元)"  align="left">
             <template #default="{ row }">
               <div v-if="row.itemSku.costPrice" class="flex-space-between">
                 <span>成本价：</span>
@@ -60,7 +117,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="重量(kg)" width="160" align="left">
+          <el-table-column label="重量(kg)"  align="left">
             <template #default="{ row }">
               <div v-if="row.itemSku.netWeight" class="flex-space-between">
                 <span>净重：</span>
@@ -76,19 +133,9 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="长宽高(cm)" align="left" width="160">
+          <el-table-column label="长宽高(cm)" align="left" >
             <template #default="{ row }">
               <div>{{ getVolumeText(row.itemSku) }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="下载条码" align="left"  width="170">
-            <template #default="{ row }">
-              <div v-if="row.itemSku.skuCode">
-                <el-button link type="primary" @click="openBatchDownloadDialog(row, 'barcode')" icon="Download">下载条码</el-button>
-              </div>
-              <div v-if="row.itemSku.skuCode">
-                <el-button link type="primary" @click="openBatchDownloadDialog(row, 'qrcode')" icon="Download">下载二维码</el-button>
-              </div>
             </template>
           </el-table-column>
           <el-table-column label="操作" align="left" prop="itemId" width="120">
@@ -184,7 +231,14 @@
               </el-col>
               <el-col :span="12">
                 <el-form-item label="商品单位" prop="unit">
-                  <el-input v-model="form.unit" placeholder="请输入单位类别"/>
+                  <el-select v-model="form.unit" clearable filterable placeholder="请选择单位" style="width: 100%!important;">
+                    <el-option
+                      v-for="item in useWmsStore().merchantList"
+                      :key="item.id"
+                      :label="item.merchantName"
+                      :value="item.id"
+                    ></el-option>
+                  </el-select>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -199,6 +253,25 @@
                       :value="item.id"
                     ></el-option>
                   </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="商品级别" prop="itemLevel">
+                  <el-select v-model="form.itemLevel" clearable filterable placeholder="请选择级别" style="width: 100%!important;">
+                    <el-option
+                      v-for="dict in product_level"
+                      :key="dict.value"
+                      :label="dict.label"
+                      :value="dict.value"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="24">
+              <el-col :span="24">
+                <el-form-item label="商品图片" prop="itemImage">
+                  <image-upload v-model="form.itemImage" :limit="5" />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -220,10 +293,10 @@
                   </el-form-item>
                 </template>
               </el-table-column>
-              <el-table-column label="编号/条码" width="250">
+              <el-table-column label="编号" width="250">
                 <template #default="scope">
                   <div class="flex-center">
-                    <span class="mr5" style="width: 50px">编号/条码</span>
+                    <span class="mr5" style="width: 50px">编号</span>
                     <el-input v-model="scope.row.skuCode" />
                   </div>
 <!--                  <div class="flex-center mt5">
@@ -339,8 +412,8 @@
       :close-on-click-modal="false"
     >
       <el-form label-width="100px">
-        <el-form-item label="编号/条码">
-          <el-input v-model="batchDownloadDialog.skuCode" disabled />
+        <el-form-item label="商品编号">
+          <el-input v-model="batchDownloadDialog.itemCode" disabled />
         </el-form-item>
         <el-form-item label="起始编号">
           <el-input-number
@@ -365,7 +438,7 @@
           show-icon
         />
         <div style="margin-top: 10px; color: #909399; font-size: 12px;">
-          生成的码值格式：{{ batchDownloadDialog.skuCode }}_ + 5位数字（如：{{ batchDownloadDialog.skuCode }}_00001）
+          码值：{{ batchDownloadDialog.itemCode }}
         </div>
       </el-form>
       <template #footer>
@@ -400,11 +473,51 @@ import JSBarcode from 'jsbarcode'
 import {useWmsStore} from '@/store/modules/wms'
 import JSZip from 'jszip'
 import {saveAs} from 'file-saver'
+import * as XLSX from 'xlsx'
+import { listByIds } from '@/api/system/oss'
 
 const barcode = ref(null)
 const route = useRoute()
 const {proxy} = getCurrentInstance();
+const { product_level } = proxy.useDict('product_level');
 const itemList = ref([]);
+const itemImageUrls = reactive({}); // itemId -> [url1, url2, ...] 图片 URL 数组
+
+// 判断商品是否有有效图片
+const hasValidImage = (row) => {
+  const urls = itemImageUrls[row.item.id];
+  return Array.isArray(urls) && urls.length > 0;
+};
+
+// 图片加载失败时移除 URL（不再显示占位图标）
+const handleImageError = (row) => {
+  delete itemImageUrls[row.item.id];
+};
+
+// 解析商品图片 ossId -> url（支持多张）
+const resolveItemImages = async (items) => {
+  const ossIds = items
+    .map(r => r.item?.itemImage)
+    .filter(Boolean)
+    .flatMap(v => String(v).split(','))
+    .filter(Boolean);
+  const uniqueIds = [...new Set(ossIds)];
+  if (!uniqueIds.length) return;
+  try {
+    const res = await listByIds(uniqueIds.join(','));
+    const idUrlMap = {};
+    (res.data || []).forEach(item => { idUrlMap[item.ossId] = item.url; });
+    items.forEach(r => {
+      if (r.item?.itemImage) {
+        const ids = String(r.item.itemImage).split(',').filter(Boolean);
+        const urls = ids.map(id => idUrlMap[id]).filter(Boolean);
+        if (urls.length > 0) {
+          itemImageUrls[r.item.id] = urls;
+        }
+      }
+    });
+  } catch (e) { /* ignore */ }
+};
 const itemCategoryTreeSelectList = computed(() => useWmsStore().itemCategoryTreeList);
 const itemCategoryTreeOptionsList = computed(() => {
   let data = [...itemCategoryTreeSelectList.value];
@@ -460,7 +573,7 @@ const edit = (node, data) => {
 const batchDownloadDialog = reactive({
   visible: false,
   type: '', // 'barcode' or 'qrcode'
-  skuCode: '',
+  itemCode: '',
   startNum: 1,
   endNum: 1,
   loading: false
@@ -468,12 +581,12 @@ const batchDownloadDialog = reactive({
 
 // 打开批量下载对话框
 const openBatchDownloadDialog = (row, type) => {
-  if (!row.itemSku.skuCode) {
-    proxy?.$modal.msgWarning('该规格没有设置编号/条码');
+  if (!row.item.itemCode) {
+    proxy?.$modal.msgWarning('该商品没有设置商品编号');
     return;
   }
   batchDownloadDialog.type = type;
-  batchDownloadDialog.skuCode = row.itemSku.skuCode;
+  batchDownloadDialog.itemCode = row.item.itemCode;
   batchDownloadDialog.startNum = 1;
   batchDownloadDialog.endNum = 1;
   batchDownloadDialog.visible = true;
@@ -495,6 +608,8 @@ const initFormData = {
   itemCategory: undefined,
   unit: undefined,
   itemBrand: undefined,
+  itemImage: undefined,
+  itemLevel: undefined,
   remark: undefined,
 }
 const initCategoryFormData = {
@@ -512,7 +627,8 @@ const data = reactive({
     pageSize: 10,
     itemCode: undefined,
     itemName: undefined,
-    itemType: undefined
+    itemType: undefined,
+    unit: undefined
   },
   rules: {
     id: [
@@ -521,9 +637,12 @@ const data = reactive({
     itemName: [
       {required: true, message: "名称不能为空", trigger: "blur"}
     ],
-    itemCategory: [
-      {required: true, message: "分类不能为空", trigger: "blur"}
+    itemCode: [
+      {required: true, message: "编号不能为空", trigger: "blur"}
     ],
+    /*itemCategory: [
+      {required: true, message: "分类不能为空", trigger: "blur"}
+    ],*/
     warehouseId: [
       {required: true, message: "所属仓库不能为空", trigger: "blur"}
     ],
@@ -572,6 +691,7 @@ const getList = async () => {
   itemList.value = content.map((it) => ({...it, id: it.skuId,itemId: it?.item?.id}));
   total.value = res.total;
   loading.value = false;
+  resolveItemImages(itemList.value);
 }
 const handleAddType = (show) => {
   categoryDialog.title = "新增商品分类";
@@ -686,9 +806,11 @@ const resetQuery = () => {
   handleQuery();
 }
 
+const selectedRows = ref([])
 /** 多选框选中数据 */
 const handleSelectionChange = (selection) => {
   ids.value = selection.map(item => item.id);
+  selectedRows.value = selection;
   single.value = selection.length != 1;
   multiple.value = !selection.length;
 }
@@ -792,11 +914,55 @@ const handleDelete = async (row) => {
   await getList();
 }
 const treeRef = ref(null)
+const exportLoading = ref(false);
 /** 导出按钮操作 */
-const handleExport = () => {
-  proxy?.download('wms/item/export', {
-    ...queryParams.value
-  }, `item_${new Date().getTime()}.xlsx`)
+const handleExport = async () => {
+  exportLoading.value = true;
+  try {
+    const query = { ...queryParams.value, pageNum: 1, pageSize: 99999 };
+    const res = await listItemSkuPage(query);
+    const rows = res.rows || [];
+    if (rows.length === 0) { proxy?.$modal.msgWarning('没有可导出的数据'); return; }
+
+    const store = useWmsStore();
+    const getLevelLabel = (val) => {
+      const dict = product_level.value?.find(d => d.value === String(val));
+      return dict ? dict.label : (val || '');
+    };
+
+    const exportData = rows.map(row => ({
+      '商品名称': row.item?.itemName || '',
+      '商品编号': row.item?.itemCode || '',
+      '商品单位': row.item?.unit ? (store.merchantMap.get(row.item.unit)?.merchantName || '') : '',
+      '商品分类': row.item?.itemCategory ? (store.itemCategoryMap.get(row.item.itemCategory)?.categoryName || '') : '',
+      '商品品牌': row.item?.itemBrand ? (store.itemBrandMap.get(row.item.itemBrand)?.brandName || '') : '',
+      '商品级别': getLevelLabel(row.item?.itemLevel),
+      '规格名称': row.itemSku?.skuName || '',
+      '规格编号': row.itemSku?.skuCode || '',
+      '成本价': Number(row.itemSku?.costPrice) || '',
+      '销售价': Number(row.itemSku?.sellingPrice) || '',
+      '净重(kg)': Number(row.itemSku?.netWeight) || '',
+      '毛重(kg)': Number(row.itemSku?.grossWeight) || '',
+      '长(cm)': Number(row.itemSku?.length) || '',
+      '宽(cm)': Number(row.itemSku?.width) || '',
+      '高(cm)': Number(row.itemSku?.height) || '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    ws['!cols'] = [
+      { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 10 },
+      { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 10 }, { wch: 10 }, { wch: 10 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '商品列表');
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `商品列表_${new Date().getTime()}.xlsx`);
+  } catch (e) {
+    proxy?.$modal.msgError('导出失败：' + (e.message || e));
+  } finally {
+    exportLoading.value = false;
+  }
 }
 
 // 确认批量下载
@@ -818,8 +984,8 @@ const confirmBatchDownload = async () => {
     const count = batchDownloadDialog.endNum - batchDownloadDialog.startNum + 1;
 
     for (let i = batchDownloadDialog.startNum; i <= batchDownloadDialog.endNum; i++) {
-      const numStr = String(i).padStart(5, '0');
-      const codeValue = `${batchDownloadDialog.skuCode}_${numStr}`;
+      // 码值直接使用商品编号，不添加后缀
+      const codeValue = batchDownloadDialog.itemCode;
 
       let blob;
       if (batchDownloadDialog.type === 'barcode') {
@@ -828,12 +994,14 @@ const confirmBatchDownload = async () => {
         blob = await generateQrcodeBlob(codeValue);
       }
 
-      const fileName = `${codeValue}.png`;
+      const fileName = batchDownloadDialog.startNum === batchDownloadDialog.endNum
+        ? `${codeValue}.png`
+        : `${codeValue}_${i}.png`;
       zip.file(fileName, blob);
     }
 
     const content = await zip.generateAsync({ type: 'blob' });
-    const zipFileName = `${batchDownloadDialog.type === 'barcode' ? '条码' : '二维码'}_${batchDownloadDialog.skuCode}_${new Date().getTime()}.zip`;
+    const zipFileName = `${batchDownloadDialog.type === 'barcode' ? '条码' : '二维码'}_${batchDownloadDialog.itemCode}_${new Date().getTime()}.zip`;
     saveAs(content, zipFileName);
 
     proxy?.$modal.msgSuccess(`成功生成 ${count} 个${batchDownloadDialog.type === 'barcode' ? '条码' : '二维码'}`);
@@ -897,6 +1065,220 @@ const generateQrcodeBlob = (codeValue) => {
   });
 }
 
+
+/** 批量下载条码（勾选商品） */
+const handleBatchDownloadBarcode = async () => {
+  if (selectedRows.value.length === 0) return;
+  const rows = selectedRows.value.filter(r => r.itemSku?.skuCode);
+  if (rows.length === 0) {
+    proxy?.$modal.msgWarning('选中的商品均无规格编号，无法生成条码');
+    return;
+  }
+  const zip = new JSZip();
+  for (const r of rows) {
+    const codeValue = r.itemSku.skuCode;
+    const blob = await generateBarcodeBlob(codeValue);
+    zip.file(`${codeValue}.png`, blob);
+  }
+  const content = await zip.generateAsync({ type: 'blob' });
+  saveAs(content, `条码_${rows.length}个商品.zip`);
+}
+
+/** 批量下载二维码（勾选商品） */
+const handleBatchDownloadQrcode = async () => {
+  if (selectedRows.value.length === 0) return;
+  const rows = selectedRows.value.filter(r => r.itemSku?.skuCode);
+  if (rows.length === 0) {
+    proxy?.$modal.msgWarning('选中的商品均无规格编号，无法生成二维码');
+    return;
+  }
+  const zip = new JSZip();
+  for (const r of rows) {
+    const codeValue = r.itemSku.skuCode;
+    const blob = await generateQrcodeBlob(codeValue);
+    zip.file(`${codeValue}.png`, blob);
+  }
+  const content = await zip.generateAsync({ type: 'blob' });
+  saveAs(content, `二维码_${rows.length}个商品.zip`);
+}
+
+
+/** 下载商品码（批量） */
+const handleDownloadProductCode = async () => {
+  if (selectedRows.value.length === 0) return;
+  const rows = selectedRows.value.filter(r => r.item?.itemCode);
+  if (rows.length === 0) {
+    proxy?.$modal.msgWarning('选中的商品均无商品编号，无法生成商品码');
+    return;
+  }
+
+  try {
+    if (rows.length === 1) {
+      const r = rows[0];
+      const blob = await generateProductCodeBlob({
+        itemName: r.item?.itemName || '',
+        skuName: r.itemSku?.skuName || '',
+        itemCode: r.item?.itemCode || ''
+      });
+      saveAs(blob, `商品码_${r.item.itemCode}.png`);
+    } else {
+      const zip = new JSZip();
+      for (const r of rows) {
+        const blob = await generateProductCodeBlob({
+          itemName: r.item?.itemName || '',
+          skuName: r.itemSku?.skuName || '',
+          itemCode: r.item?.itemCode || ''
+        });
+        zip.file(`商品码_${r.item.itemCode}.png`, blob);
+      }
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `商品码_批量_${new Date().getTime()}.zip`);
+    }
+    proxy?.$modal.msgSuccess(`成功生成 ${rows.length} 个商品码`);
+  } catch (error) {
+    console.error('生成商品码失败:', error);
+    proxy?.$modal.msgError('生成商品码失败');
+  }
+};
+
+/** 生成商品码卡片图片（60mm×40mm @300DPI） */
+const generateProductCodeBlob = ({ itemName, skuName, itemCode }) => {
+  return new Promise((resolve, reject) => {
+    try {
+      // 60mm × 40mm @ 300DPI（横向卡片）
+      const W = 709;
+      const H = 472;
+      const PAD = 25; // 上下左右留白
+      const LABEL_W = 106;
+      const ROW_H = 80;          // ← Name/Model/Code 行高（调大则数据行更高）
+      const TITLE_H = 50;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+
+      // 白色背景
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+
+      // 外边框（留白内）
+      ctx.strokeStyle = '#333333';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(PAD, PAD, W - PAD * 2, H - PAD * 2);
+
+      // 标题
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 22px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Stock Card', W / 2, PAD + TITLE_H / 2);
+
+      // 标题下分隔线
+      const titleBottom = PAD + TITLE_H;
+      ctx.beginPath();
+      ctx.moveTo(PAD, titleBottom);
+      ctx.lineTo(W - PAD, titleBottom);
+      ctx.stroke();
+
+      // 数据行
+      const dataRows = [
+        { label: 'Name', value: itemName },
+        { label: 'Model', value: skuName },
+        { label: 'Code', value: itemCode },
+      ];
+
+      let y = titleBottom;
+      dataRows.forEach((row) => {
+        y += ROW_H;
+        ctx.beginPath();
+        ctx.moveTo(PAD, y);
+        ctx.lineTo(W - PAD, y);
+        ctx.stroke();
+
+        // 左侧标签背景
+        ctx.fillStyle = '#f5f5f5';
+        ctx.fillRect(PAD + 1, y - ROW_H + 1, LABEL_W - 1, ROW_H - 1);
+
+        ctx.beginPath();
+        ctx.moveTo(PAD + LABEL_W, y - ROW_H);
+        ctx.lineTo(PAD + LABEL_W, y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#333333';
+        ctx.font = 'bold 15px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(row.label, PAD + LABEL_W / 2, y - ROW_H / 2);
+
+        ctx.fillStyle = '#000000';
+        ctx.font = '15px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(row.value || '', PAD + LABEL_W + 12, y - ROW_H / 2);
+      });
+
+      // Barcode 行（填满剩余全部空间，条码图居中显示）
+      const barcodeStartY = y;
+      const barcodeRowH = H - PAD - barcodeStartY; // 填满到底部边框
+      const barcodeEndY = H - PAD;
+      const BARCODE_IMG_H = 110;  // ← 条码图实际高度（调小则条码更矮）
+
+      ctx.beginPath();
+      ctx.moveTo(PAD, barcodeStartY);
+      ctx.lineTo(W - PAD, barcodeStartY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fillRect(PAD + 1, barcodeStartY + 1, LABEL_W - 1, barcodeRowH - 1);
+      ctx.beginPath();
+      ctx.moveTo(PAD + LABEL_W, barcodeStartY);
+      ctx.lineTo(PAD + LABEL_W, barcodeEndY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#333333';
+      ctx.font = 'bold 15px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Barcode', PAD + LABEL_W / 2, barcodeStartY + barcodeRowH / 2);
+
+      // 绘制条形码（居中显示）
+      if (itemCode) {
+        try {
+          const barcodeCanvas = document.createElement('canvas');
+          JSBarcode(barcodeCanvas, itemCode, {
+            format: 'CODE128',
+            displayValue: false,
+            height: BARCODE_IMG_H,
+            margin: 0,
+            background: '#ffffff',
+            lineColor: '#000000'
+          });
+          // 条码图水平居中、垂直居中
+          const cellLeft = PAD + LABEL_W;
+          const cellWidth = W - PAD - cellLeft;
+          const bw = cellWidth - 20; // 左右各留10px内边距
+          const bh = BARCODE_IMG_H;
+          const bx = cellLeft + (cellWidth - bw) / 2;
+          const by = barcodeStartY + (barcodeRowH - bh) / 2;
+          ctx.drawImage(barcodeCanvas, bx, by, bw, bh);
+        } catch (e) {
+          ctx.fillStyle = '#000';
+          ctx.font = '15px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(itemCode, PAD + LABEL_W + (W - PAD - LABEL_W) / 2, barcodeStartY + barcodeRowH / 2);
+        }
+      }
+
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('生成商品码失败'));
+      }, 'image/png');
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
 
 /** 下载条形码 */
 const downloadBarcode = (row) => {
@@ -970,6 +1352,7 @@ const getVolumeText = (itemSku) => {
 onMounted(() => {
   nextTick(()=>{
     getList();
+    useWmsStore().getMerchantList();
     if (route.query.openDrawer) {
       handleAdd()
     }

@@ -93,21 +93,20 @@
             </el-popover>
           </div>
           <el-table :data="form.details" border empty-text="暂无商品明细">
-            <el-table-column label="商品信息" prop="itemSku.itemName">
+            <el-table-column label="商品名称" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">
-                <div>{{
-                    row.item.itemName + (row.item.itemCode ? ('(' + row.item.itemCode + ')') : '')
-                  }}
-                </div>
-                <div v-if="row.item.itemBrand">
-                  品牌：{{ useWmsStore().itemBrandMap.get(row.item.itemBrand).brandName }}
-                </div>
+                {{ row.item.itemName }}
+              </template>
+            </el-table-column>
+            <el-table-column label="商品编号" align="center" min-width="110" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.item.itemCode }}
               </template>
             </el-table-column>
             <el-table-column label="规格信息">
               <template #default="{ row }">
                 <div>{{ row.itemSku.skuName}}</div>
-                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>
+                <div v-if="row.itemSku.skuCode">编码：{{ row.itemSku.skuCode }}</div>
               </template>
             </el-table-column>
             <el-table-column label="库位编号" prop="stockCode" width="300">
@@ -189,7 +188,7 @@
         :model-value="inventorySelectShow"
         @handleOkClick="handleOkClick"
         @handleCancelClick="inventorySelectShow = false"
-        :size="'90%'"
+        :size="'75%'"
         :select-warehouse-disable="false"
         :warehouse-id="form.sourceWarehouseId"
         :selected-inventory="selectedInventory"

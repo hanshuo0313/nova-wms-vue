@@ -71,16 +71,15 @@
             </div>
           </div>
           <el-table :data="form.details" border empty-text="暂无商品明细">
-            <el-table-column label="商品信息" prop="itemSku.itemName">
+            <el-table-column label="商品名称" min-width="120" show-overflow-tooltip>
               <template #default="scope">
-                  <div>{{
-                      scope.row.item.itemName + (scope.row.item.itemCode ? ('(' + scope.row.item.itemCode + ')') : '')
-                    }}
-                  </div>
-                  <div v-if="scope.row.item.itemBrand">
-                    品牌：{{ useWmsStore().itemBrandMap.get(scope.row.item.itemBrand).brandName }}
-                  </div>
-                </template>
+                {{ scope.row.item.itemName }}
+              </template>
+            </el-table-column>
+            <el-table-column label="商品编号" align="center" min-width="110" show-overflow-tooltip>
+              <template #default="scope">
+                {{ scope.row.item.itemCode }}
+              </template>
             </el-table-column>
             <el-table-column label="规格信息">
               <template #default="{ row }">
@@ -89,7 +88,7 @@
                   <div v-else>请选择商品</div>
                 </template>
                 <template v-else>
-                  <div>{{ row.itemSku.skuName + (row.itemSku.barcode ? ('(' + row.itemSku.barcode + ')') : '') }}</div>
+                  <div>{{ row.itemSku.skuName + (row.itemSku.skuCode ? ('(' + row.itemSku.skuCode + ')') : '') }}</div>
                 </template>
               </template>
             </el-table-column>
@@ -171,7 +170,7 @@
         :model-value="inventorySelectShow"
         @handleOkClick="handleInventorySelectOkClick"
         @handleCancelClick="inventorySelectShow = false"
-        :size="'90%'"
+        :size="'75%'"
         :warehouse-id="form.warehouseId"
         :selected-inventory="selectedInventory"
       />

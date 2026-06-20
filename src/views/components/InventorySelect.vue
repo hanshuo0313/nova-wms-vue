@@ -2,40 +2,87 @@
   <el-drawer :model-value="show" title="选择库存" @close="handleCancelClick" :size="size" :close-on-click-modal="false"
              append-to-body>
     <el-form :inline="true" label-width="68px">
-      <el-form-item label="商品名称">
-        <el-input v-model="query.itemName" clearable placeholder="商品名称"></el-input>
-      </el-form-item>
-      <el-form-item label="商品编号">
-        <el-input class="w200" v-model="query.itemCode" clearable placeholder="商品编号"></el-input>
-      </el-form-item>
-      <el-form-item label="规格名称">
-        <el-input class="w200" v-model="query.skuName" clearable placeholder="规格名称"></el-input>
-      </el-form-item>
-      <el-form-item label="规格编号">
-        <el-input class="w200" v-model="query.barcode" clearable placeholder="规格编号"></el-input>
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="loadAll">查询</el-button>
-      </el-form-item>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="商品名称">
+            <el-input v-model="query.itemName" clearable placeholder="商品名称"></el-input>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="商品编号">
+            <el-input v-model="query.itemCode" clearable placeholder="商品编号"></el-input>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="规格名称">
+            <el-input v-model="query.skuName" clearable placeholder="规格名称"></el-input>
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="8">
+          <el-form-item label="规格编号">
+            <el-input v-model="query.barcode" clearable placeholder="规格编号"></el-input>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="商品单位">
+            <el-select v-model="query.unit" clearable filterable placeholder="请选择单位" style="width: 90%">
+              <el-option v-for="item in useWmsStore().merchantList" :key="item.id" :label="item.merchantName" :value="item.id"/>
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="商品分类">
+            <el-select v-model="query.itemCategory" clearable filterable placeholder="请选择分类" style="width: 90%">
+              <el-option v-for="item in useWmsStore().itemCategoryList" :key="item.id" :label="item.categoryName" :value="item.id"/>
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="24" style="text-align: right">
+          <el-button type="primary" @click="loadAll">查询</el-button>
+          <el-button @click="handleReset">重置</el-button>
+        </el-col>
+      </el-row>
     </el-form>
     <el-table :data="list" @selection-change="handleSelectionChange" border :row-key="getRowKey" empty-text="暂无库存"
               v-loading="loading" ref="inventorySelectFormRef" cell-class-name="my-cell" class="mt20">
       <el-table-column type="selection" width="55" :reserve-selection="true" :selectable="judgeSelectable"/>
-      <el-table-column label="商品信息" prop="itemId">
+      <el-table-column label="商品名称" min-width="80" show-overflow-tooltip>
         <template #default="{ row }">
-          <div>{{ row.item.itemName }}</div>
-          <div v-if="row.item.itemCode">编号：{{ row.item.itemCode }}</div>
-          <div v-if="row.item.itemBrand">品牌：{{ useWmsStore().itemBrandMap.get(row.item.itemBrand).brandName }}</div>
+          {{ row.item.itemName }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品编号" align="center" min-width="60" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.item.itemCode }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品单位" align="center" min-width="60" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品分类" align="center" min-width="60" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName : '' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品级别" align="center" width="90" show-overflow-tooltip>
+        <template #default="{ row }">
+          <dict-tag :options="product_level" :value="row.item.itemLevel"/>
         </template>
       </el-table-column>
       <el-table-column label="规格信息">
         <template #default="{ row }">
           <div>{{ row.itemSku.skuName }}</div>
           <div v-if="row.itemSku.skuCode">编号：{{ row.itemSku.skuCode }}</div>
-          <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>
+<!--      <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
         </template>
       </el-table-column>
-      <el-table-column label="剩余库存" prop="quantity" align="right">
+      <el-table-column label="剩余库存" prop="quantity" align="center">
         <template #default="{ row }">
           <el-statistic :value="Number(row.quantity)" :precision="0"/>
         </template>
@@ -74,6 +121,7 @@ import {listInventory} from "@/api/wms/inventory";
 import {getWarehouseAndSkuKey} from "@/utils/wmsUtil";
 
 const {proxy} = getCurrentInstance()
+const { product_level } = proxy.useDict('product_level');
 
 const spanMethod = computed(() => getRowspanMethod(list.value, ['itemId']))
 const router = useRouter()
@@ -84,6 +132,8 @@ const query = reactive({
   itemCode: '',
   skuName: '',
   skuCode: '',
+  unit: '',
+  itemCategory: '',
   minQuantity: 1,
   areaId: null,
   warehouseId: null
@@ -110,6 +160,16 @@ const editableList = computed(() => {
 const loadAll = () => {
   pageReq.page = 1
   getList()
+};
+
+const handleReset = () => {
+  query.itemName = ''
+  query.itemCode = ''
+  query.skuName = ''
+  query.barcode = ''
+  query.unit = ''
+  query.itemCategory = ''
+  loadAll()
 };
 const getRowKey = (row) => {
   return row.id;
@@ -140,7 +200,7 @@ const props = defineProps({
   },
   size: {
     type: String,
-    default: '30%'
+    default: '25%'
   },
   selectedInventory: {
     type: Array,
@@ -198,6 +258,8 @@ defineExpose({
   getList
 })
 onMounted(() => {
+  useWmsStore().getMerchantList();
+  useWmsStore().getItemCategoryList();
   loadAll();
 })
 </script>

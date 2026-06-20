@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
     <el-card>
-      <el-form :model="queryParams" ref="queryRef" :inline="true" label-width="68px">
+      <el-form :model="queryParams" ref="queryRef" :inline="true" label-width="68px" style="display: flex; flex-wrap: wrap; align-items: flex-start;">
         <el-form-item label="入库状态" prop="receiptOrderStatus">
           <el-radio-group v-model="queryParams.orderStatus" @change="handleQuery">
             <el-radio-button
@@ -52,7 +52,17 @@
             @keyup.enter="handleQuery"
           />
         </el-form-item>
-        <el-form-item>
+        <el-form-item label="供应商" prop="merchantId">
+          <el-select v-model="queryParams.merchantId" clearable filterable placeholder="请选择供应商" style="width: 200px">
+            <el-option
+              v-for="item in useWmsStore().merchantList"
+              :key="item.id"
+              :label="item.merchantName"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item style="margin-left: auto">
           <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
           <el-button icon="Refresh" @click="resetQuery">重置</el-button>
         </el-form-item>
@@ -400,6 +410,7 @@ function ifExpand(expandedRows) {
 function getRowKey(row) {
   return row.id
 }
+useWmsStore().getMerchantList();
 getList();
 </script>
 <style lang="scss">

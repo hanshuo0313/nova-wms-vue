@@ -25,23 +25,58 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
+          <el-form-item label="商品单位">
+            <el-select v-model="query.unit" clearable filterable placeholder="请选择单位" style="width: 90%">
+              <el-option v-for="item in useWmsStore().merchantList" :key="item.id" :label="item.merchantName" :value="item.id"/>
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="商品分类">
+            <el-select v-model="query.itemCategory" clearable filterable placeholder="请选择分类" style="width: 90%">
+              <el-option v-for="item in useWmsStore().itemCategoryList" :key="item.id" :label="item.categoryName" :value="item.id"/>
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="20">
+        <el-col :span="24" style="text-align: right">
           <el-button type="primary" @click="loadAll">查询</el-button>
+          <el-button @click="handleReset">重置</el-button>
         </el-col>
       </el-row>
     </el-form>
     <el-table :data="list" @selection-change="handleSelectionChange" border :row-key="getRowKey" empty-text="暂无商品" v-loading="loading" ref="skuSelectFormRef" cell-class-name="my-cell">
       <el-table-column type="selection" width="55" :reserve-selection="true" v-if="!singleSelect" :selectable="judgeSelectable"/>
-      <el-table-column label="商品信息" prop="itemId">
+      <el-table-column label="商品名称" min-width="120" show-overflow-tooltip>
         <template #default="{ row }">
-          <div>{{ row.item.itemName }}</div>
-          <div v-if="row.item.itemCode">编号：{{ row.item.itemCode }}</div>
-          <div v-if="row.item.itemBrand">品牌：{{ useWmsStore().itemBrandMap.get(row.item.itemBrand).brandName }}</div>
+          {{ row.item.itemName }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品编号" align="center" min-width="110" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.item.itemCode }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品单位" align="center" min-width="90" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品分类" align="center" min-width="100" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName : '' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="商品级别" align="center" width="90">
+        <template #default="{ row }">
+          <dict-tag :options="product_level" :value="row.item.itemLevel"/>
         </template>
       </el-table-column>
       <el-table-column label="规格信息">
         <template #default="{ row }">
           <div>{{ row.itemSku.skuName }}</div>
-          <div v-if="row.itemSku.skuCode">编号/条码：{{ row.itemSku.skuCode }}</div>
+          <div v-if="row.itemSku.skuCode">编号：{{ row.itemSku.skuCode }}</div>
 <!--          <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
         </template>
       </el-table-column>
@@ -57,7 +92,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="重量(kg)" width="160" align="left">
+      <el-table-column label="重量(kg)" width="120" align="left">
         <template #default="{ row }">
           <div v-if="row.itemSku.netWeight" class="flex-space-between">
             <span>净重：</span>
@@ -69,7 +104,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="长宽高(cm)" align="right" width="250">
+      <el-table-column label="长宽高(cm)" align="right" width="120">
         <template #default="{ row }">
           <div>{{ getVolumeText(row) }}</div>
         </template>
@@ -87,7 +122,6 @@
     <template v-slot:footer>
       <div style="width: 100%;display: flex;justify-content: space-between">
         <span>
-          <el-button @click="handleAddItem" icon="Plus">创建商品</el-button>
           <el-button @click="loadAll" icon="Refresh">刷新</el-button>
         </span>
         <span>
@@ -97,208 +131,23 @@
       </div>
     </template>
   </el-drawer>
-
-  <el-drawer :title="addItemDialog.title" v-model="addItemDialog.visible" size="80%" append-to-body :close-on-click-modal="false">
-    <div v-loading="addItemLoading">
-      <el-card>
-        <el-form ref="itemFormRef" :model="addItemForm" :rules="addItemRules" label-width="108px">
-          <el-row :gutter="24">
-            <el-col :span="12">
-              <el-form-item label="商品名称" prop="itemName">
-                <el-input v-model="addItemForm.itemName" placeholder="请输入名称"/>
-              </el-form-item>
-            </el-col>
-            <el-col :span="10">
-              <el-form-item label="商品分类" prop="itemCategory">
-                <el-tree-select
-                  ref="treeRef"
-                  v-model="addItemForm.itemCategory"
-                  :data="itemCategoryTreeSelectList"
-                  :props="{ value: 'id', label: 'label', children: 'children' }"
-                  value-key="id"
-                  placeholder="请选择分类"
-                  check-strictly
-                  style="width: 100%!important;"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="1">
-              <el-button link icon="Plus" type="primary" style="height: 32px!important;line-height: 32px!important;"
-                         @click="handleAddType">新增分类
-              </el-button>
-            </el-col>
-          </el-row>
-          <el-row :gutter="24">
-            <el-col :span="12">
-              <el-form-item label="商品编号" prop="itemCode">
-                <el-input v-model="addItemForm.itemCode" placeholder="请输入编号"/>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="商品单位" prop="unit">
-                <el-input v-model="addItemForm.unit" placeholder="请输入单位类别"/>
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="24">
-            <el-col :span="12">
-              <el-form-item label="商品品牌" prop="itemBrand">
-                <el-select v-model="addItemForm.itemBrand" clearable filterable style="width: 100%!important;">
-                  <el-option
-                    v-for="item in useWmsStore().itemBrandList"
-                    :key="item.id"
-                    :label="item.brandName"
-                    :value="item.id"
-                  ></el-option>
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </el-form>
-      </el-card>
-      <el-card class="mt20">
-        <template #header>
-          <div class="card-header">
-            <span>规格</span>
-          </div>
-        </template>
-        <el-form :model="addItemSkuForm" :rules="addItemSkuRules" ref="addItemSkuFormRef" :show-message="false">
-          <el-table :data="addItemSkuForm.itemSkuList" border cell-class-name="my-cell">
-            <el-table-column label="规格名称" prop="skuName">
-              <template #default="scope">
-                <el-form-item :prop="'itemSkuList.' + scope.$index + '.skuName'" :rules="addItemSkuRules.skuName"
-                              style="margin-bottom: 0!important;">
-                  <el-input v-model="scope.row.skuName" placeholder="请输入规格名称"/>
-                </el-form-item>
-              </template>
-            </el-table-column>
-            <el-table-column label="编号/条码" width="250">
-              <template #default="scope">
-                <div class="flex-center">
-                  <span class="mr5" style="width: 50px">编号/条码</span>
-                  <el-input v-model="scope.row.skuCode" />
-                </div>
-<!--                <div class="flex-center mt5">
-                  <span class="mr5" style="width: 50px">条码</span>
-                  <el-input v-model="scope.row.barcode" />
-                </div>-->
-              </template>
-            </el-table-column>
-            <el-table-column label="长/宽/高(cm)" width="200">
-              <template #default="scope">
-                <div class="flex-center">
-                  <span class="mr5">长</span>
-                  <el-input-number :controls="false" :min="0" :precision="1" class="mr5" v-model="scope.row.length" />
-                </div>
-                <div class="flex-center mt5">
-                  <span class="mr5">宽</span>
-                  <el-input-number :controls="false" :min="0" :precision="1" class="mr5" v-model="scope.row.width" />
-                </div>
-                <div class="flex-center mt5">
-                  <span class="mr5">高</span>
-                  <el-input-number :controls="false" :min="0" :precision="1" v-model="scope.row.height" />
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="净重/毛重(kg)" width="240">
-              <template #default="scope">
-                <div class="flex-center">
-                  <span class="mr5">净重</span>
-                  <el-input-number :controls="false" :min="0" :precision="3" v-model="scope.row.netWeight"/>
-                </div>
-                <div class="flex-center mt5">
-                  <span class="mr5">毛重</span>
-                  <el-input-number :controls="false" :min="0" :precision="3" v-model="scope.row.grossWeight"/>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="成本价/销售价(元)" width="240">
-              <template #default="scope">
-                <div class="flex-center">
-                  <span class="mr5">成本价</span>
-                  <el-input-number :controls="false" :min="0" :precision="2" v-model="scope.row.costPrice"/>
-                </div>
-                <div class="flex-center mt5">
-                  <span class="mr5">销售价</span>
-                  <el-input-number :controls="false" :min="0" :precision="2" v-model="scope.row.sellingPrice"/>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" class-name="small-padding fixed-width" width="80" align="right">
-              <template #default="scope">
-                <el-button link icon="Delete" type="primary" @click="handleDeleteItemSku(scope.$index)">删除</el-button>
-              </template>
-            </el-table-column>
-            <template #append v-if="addItemSkuForm.itemSkuList.length">
-              <div style="padding: 6px 2px 6px 2px;text-align: center;">
-                <el-button text class="add-btn" icon="Plus" type="primary" @click="onAppendBtnClick">添加商品规格
-                </el-button>
-              </div>
-            </template>
-            <template #empty>
-              <div style="padding: 2px 2px 6px 2px;text-align: center;width: 100%!important;">
-                <el-button text class="add-btn" icon="Plus" type="primary" @click="onAppendBtnClick">添加商品规格
-                </el-button>
-              </div>
-            </template>
-          </el-table>
-        </el-form>
-      </el-card>
-    </div>
-
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button :loading="addItemSubmitLoading" type="primary" @click="submitAddItemForm">确 定</el-button>
-        <el-button @click="cancelAddItem">取 消</el-button>
-      </div>
-    </template>
-  </el-drawer>
-
-  <el-dialog :title="categoryDialog.title" v-model="categoryDialog.visible" width="500px" append-to-body :close-on-click-modal="false">
-    <el-form ref="itemCategoryFormRef" :model="categoryForm" :rules="categoryRules" label-width="128px">
-      <el-form-item label="上级分类" prop="parentId">
-        <el-tree-select
-          v-model="categoryForm.parentId"
-          :data="itemCategoryTreeSelectList"
-          :props="{ value: 'id', label: 'label', children: 'children' }"
-          value-key="id"
-          placeholder="上级分类"
-          check-strictly
-          style="width: 100%!important;"
-          clearable
-        />
-      </el-form-item>
-      <el-form-item label="商品分类名称" prop="categoryName">
-        <el-input v-model="categoryForm.categoryName" placeholder="请输入商品分类名称" @keyup.enter="submitCategoryForm"/>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <div class="dialog-footer">
-        <el-button :loading="addItemSubmitLoading" type="primary" @click="submitCategoryForm">确 定</el-button>
-        <el-button @click="categoryDialog.visible = false">取 消</el-button>
-      </div>
-    </template>
-  </el-dialog>
 </template>
 <script setup lang="ts" name="SkuSelect">
-import {computed, getCurrentInstance, onMounted, reactive, ref, nextTick} from 'vue';
-import {ElForm} from "element-plus";
+import {computed, getCurrentInstance, onMounted, reactive, ref} from 'vue';
 import {listItemSkuPage} from "@/api/wms/itemSku";
-import {useRouter} from "vue-router";
 import {useWmsStore} from '@/store/modules/wms'
-import {getItem, addItem, updateItem} from '@/api/wms/item';
-import {addItemCategory, updateItemCategory} from "@/api/wms/itemCategory";
 
 const { proxy } = getCurrentInstance()
+const { product_level } = proxy.useDict('product_level');
 
-const router = useRouter()
 const loading = ref(false)
-const deptOptions = ref([]);
 const query = reactive({
   itemName: '',
   itemCode: '',
   skuName: '',
-  barcode: ''
+  barcode: '',
+  unit: '',
+  itemCategory: ''
 });
 const selectItemSkuVoCheck = ref([])
 const skuSelectFormRef = ref(null)
@@ -319,6 +168,16 @@ const loadAll = () => {
   pageReq.page = 1
   getList()
 };
+
+const handleReset = () => {
+  query.itemName = ''
+  query.itemCode = ''
+  query.skuName = ''
+  query.barcode = ''
+  query.unit = ''
+  query.itemCategory = ''
+  loadAll()
+};
 const getRowKey = (row: any) => {
   return row.id;
 }
@@ -336,192 +195,6 @@ const getList = () => {
   }).then(() => toggleSelection()).finally(() => loading.value = false);
 }
 
-const addItemDialog = reactive({
-  visible: false,
-  title: '新增商品'
-});
-const addItemLoading = ref(false);
-const addItemSubmitLoading = ref(false);
-const itemFormRef = ref(ElForm);
-const treeRef = ref(null);
-const itemCategoryTreeSelectList = computed(() => useWmsStore().itemCategoryTreeList);
-
-const initAddItemFormData = {
-  id: undefined,
-  itemCode: undefined,
-  itemName: undefined,
-  itemCategory: undefined,
-  unit: undefined,
-  itemBrand: undefined,
-  remark: undefined,
-}
-
-const addItemForm = reactive({...initAddItemFormData});
-
-const addItemRules = {
-  itemName: [
-    {required: true, message: "名称不能为空", trigger: "blur"}
-  ],
-  itemCategory: [
-    {required: true, message: "分类不能为空", trigger: "blur"}
-  ],
-}
-
-const addItemSkuForm = reactive({
-  itemSkuList: []
-})
-
-const addItemSkuFormRef = ref(ElForm)
-const addItemSkuRules = {
-  skuName: [{required: true, message: '规格名称不能为空', trigger: 'blur'}]
-}
-
-const categoryDialog = reactive({
-  visible: false,
-  title: '新增商品分类'
-});
-const itemCategoryFormRef = ref(ElForm);
-const categoryForm = reactive({
-  id: undefined,
-  parentId: undefined,
-  categoryName: undefined,
-});
-const categoryRules = {
-  categoryName: [
-    {required: true, message: "商品分类名称不能为空", trigger: "blur"}
-  ],
-}
-
-const resetAddItemSkuList = () => {
-  addItemSkuForm.itemSkuList = []
-  addItemSkuForm.itemSkuList.push({
-    id: '',
-    itemId: '',
-    barcode: '',
-    skuCode: '',
-    costPrice: null,
-    sellingPrice: null,
-    skuName: '',
-    length: null,
-    width: null,
-    height: null,
-    netWeight: null,
-    grossWeight: null,
-  })
-}
-
-const onAppendBtnClick = () => {
-  addItemSkuForm.itemSkuList.push({
-    id: '',
-    itemId: '',
-    barcode: '',
-    skuCode: '',
-    costPrice: null,
-    sellingPrice: null,
-    skuName: '',
-    length: null,
-    width: null,
-    height: null,
-    netWeight: null,
-    grossWeight: null,
-  })
-}
-
-const handleDeleteItemSku = (index) => {
-  if (addItemSkuForm.itemSkuList.length === 1) {
-    return proxy?.$modal.msgError("至少包含一个商品规格");
-  }
-  addItemSkuForm.itemSkuList.splice(index, 1);
-}
-
-const handleAddItem = () => {
-  resetAddItemSkuList()
-  addItemDialog.visible = true;
-  addItemDialog.title = "新增商品";
-  nextTick(async () => {
-    Object.assign(addItemForm, initAddItemFormData);
-    itemFormRef.value?.resetFields();
-  });
-}
-
-const cancelAddItem = () => {
-  addItemDialog.visible = false;
-  resetAddItemSkuList();
-}
-
-const submitAddItemForm = () => {
-  // 将 skuCode 赋值给 barcode
-  addItemSkuForm.itemSkuList.forEach(sku => {
-    if (sku.skuCode) {
-      sku.barcode = sku.skuCode;
-    }
-  });
-  addItemForm.sku = addItemSkuForm.itemSkuList
-  itemFormRef.value.validate(async (valid) => {
-    if (valid) {
-      let flag = true
-      if (!addItemSkuForm.itemSkuList || addItemSkuForm.itemSkuList.length === 0) {
-        proxy?.$modal.msgError("至少包含一个商品规格");
-        flag = false
-      }
-      await addItemSkuFormRef.value.validate((valid2) => {
-        if (!valid2) {
-          flag = false;
-        }
-      })
-      if (flag) {
-        addItemSubmitLoading.value = true;
-        addItem(addItemForm).then((res) => {
-          if (res.code === 200) {
-            proxy?.$modal.msgSuccess("新增成功");
-            addItemDialog.visible = false;
-            getList();
-          } else {
-            proxy?.$modal.msgError(res.msg);
-          }
-        }).finally(() => {
-          addItemSubmitLoading.value = false;
-        });
-      }
-    }
-  });
-}
-
-const handleAddType = () => {
-  categoryDialog.title = "新增商品分类";
-  categoryDialog.visible = true;
-  nextTick(() => {
-    categoryForm.id = undefined;
-    categoryForm.parentId = undefined;
-    categoryForm.categoryName = undefined;
-  });
-}
-
-const submitCategoryForm = () => {
-  itemCategoryFormRef.value.validate(async (valid) => {
-    if (valid) {
-      addItemSubmitLoading.value = true;
-      const apiCall = categoryForm.id ? updateItemCategory(categoryForm) : addItemCategory(categoryForm);
-      apiCall.then((res) => {
-        if (res.code === 200) {
-          proxy?.$modal.msgSuccess(categoryForm.id ? '修改成功' : '新增成功');
-          categoryDialog.visible = false;
-          useWmsStore().getItemCategoryList();
-          useWmsStore().getItemCategoryTreeList();
-        } else {
-          proxy?.$modal.msgError(res.msg);
-        }
-      }).finally(() => {
-        addItemSubmitLoading.value = false;
-      });
-    }
-  });
-}
-
-// Deleted:const goCreateItem = () => {
-// Deleted:  const data = proxy.$router.resolve({path: '/system/itemManage2', query: {openDrawer: true}})
-// Deleted:  window.open(data.href, '_blank')
-// Deleted:}
 // 定义props
 const props = defineProps({
   modelValue: {
@@ -603,6 +276,11 @@ const getVolumeText = (row) => {
 defineExpose({
   getList
 })
+
+onMounted(() => {
+  useWmsStore().getMerchantList();
+  useWmsStore().getItemCategoryList();
+});
 </script>
 <style lang="scss">
 .el-table .my-cell {

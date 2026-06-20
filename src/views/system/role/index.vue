@@ -1,6 +1,7 @@
 <template>
    <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" v-show="showSearch" :inline="true" label-width="68px">
+      <el-form :model="queryParams" ref="queryRef" v-show="showSearch" :inline="true" label-width="68px"
+               style="display: flex; flex-wrap: wrap; align-items: flex-start;">
          <el-form-item label="角色名称" prop="roleName">
             <el-input
                v-model="queryParams.roleName"
@@ -45,7 +46,7 @@
                :default-time="[new Date(2000, 1, 1, 0, 0, 0), new Date(2000, 1, 1, 23, 59, 59)]"
             ></el-date-picker>
          </el-form-item>
-         <el-form-item>
+         <el-form-item style="margin-left: auto">
             <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
             <el-button icon="Refresh" @click="resetQuery">重置</el-button>
          </el-form-item>
@@ -114,19 +115,19 @@
                <span>{{ parseTime(scope.row.createTime) }}</span>
             </template>
          </el-table-column>
-         <el-table-column label="操作" align="center" class-name="small-padding fixed-width">
+         <el-table-column label="操作" align="center"  class-name="small-padding fixed-width">
             <template #default="scope">
               <el-tooltip content="修改" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
+                <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:role:edit']">修改</el-button>
               </el-tooltip>
               <el-tooltip content="删除" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:role:remove']"></el-button>
+                <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:role:remove']">删除</el-button>
               </el-tooltip>
               <el-tooltip content="数据权限" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="CircleCheck" @click="handleDataScope(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
+                <el-button link type="primary" icon="CircleCheck" @click="handleDataScope(scope.row)" v-hasPermi="['system:role:edit']">数据权限</el-button>
               </el-tooltip>
               <el-tooltip content="分配用户" placement="top" v-if="scope.row.roleId !== 1">
-                <el-button link type="primary" icon="User" @click="handleAuthUser(scope.row)" v-hasPermi="['system:role:edit']"></el-button>
+                <el-button link type="primary" icon="User" @click="handleAuthUser(scope.row)" v-hasPermi="['system:role:edit']">分配用户</el-button>
               </el-tooltip>
             </template>
          </el-table-column>
@@ -198,6 +199,7 @@
 
       <!-- 分配角色数据权限对话框 -->
       <el-dialog :title="title" v-model="openDataScope" width="500px" append-to-body>
+
          <el-form :model="form" label-width="80px">
             <el-form-item label="角色名称">
                <el-input v-model="form.roleName" :disabled="true" />
@@ -239,12 +241,60 @@
             </div>
          </template>
       </el-dialog>
+      <!-- 分配用户对话框 -->
+      <el-dialog title="分配用户" v-model="authUserDialog.open" width="800px" append-to-body :close-on-click-modal="false">
+         <el-form :model="authUserDialog.query" ref="authUserQueryRef" :inline="true">
+            <el-form-item label="用户名称" prop="userName">
+               <el-input v-model="authUserDialog.query.userName" placeholder="请输入用户名称" clearable style="width: 200px" @keyup.enter="handleAuthUserQuery" />
+            </el-form-item>
+            <el-form-item label="手机号码" prop="phonenumber">
+               <el-input v-model="authUserDialog.query.phonenumber" placeholder="请输入手机号码" clearable style="width: 200px" @keyup.enter="handleAuthUserQuery" />
+            </el-form-item>
+            <el-form-item>
+               <el-button type="primary" icon="Search" @click="handleAuthUserQuery">搜索</el-button>
+               <el-button icon="Refresh" @click="resetAuthUserQuery">重置</el-button>
+            </el-form-item>
+         </el-form>
+         <el-row :gutter="10" class="mb8">
+            <el-col :span="1.5">
+               <el-button type="primary" plain icon="Plus" @click="openSelectUser" v-hasPermi="['system:role:add']">添加用户</el-button>
+            </el-col>
+            <el-col :span="1.5">
+               <el-button type="danger" plain icon="CircleClose" :disabled="authUserDialog.multiple" @click="cancelAuthUserAll" v-hasPermi="['system:role:remove']">批量取消授权</el-button>
+            </el-col>
+         </el-row>
+         <el-table v-loading="authUserDialog.loading" :data="authUserDialog.userList" @selection-change="handleAuthUserSelectionChange" max-height="300">
+            <el-table-column type="selection" width="55" align="center" />
+            <el-table-column label="用户名称" prop="userName" :show-overflow-tooltip="true" />
+            <el-table-column label="用户昵称" prop="nickName" :show-overflow-tooltip="true" />
+            <el-table-column label="手机" prop="phonenumber" :show-overflow-tooltip="true" />
+            <el-table-column label="状态" align="center" prop="status">
+               <template #default="scope">
+                  <dict-tag :options="sys_normal_disable" :value="scope.row.status" />
+               </template>
+            </el-table-column>
+            <el-table-column label="操作" align="center" width="100">
+               <template #default="scope">
+                  <el-button link type="primary" icon="CircleClose" @click="cancelAuthUser(scope.row)" v-hasPermi="['system:role:remove']">取消授权</el-button>
+               </template>
+            </el-table-column>
+         </el-table>
+         <pagination
+            v-show="authUserDialog.total > 0"
+            :total="authUserDialog.total"
+            v-model:page="authUserDialog.query.pageNum"
+            v-model:limit="authUserDialog.query.pageSize"
+            @pagination="getAuthUserList"
+         />
+         <select-user ref="selectRef" :roleId="authUserDialog.query.roleId" @ok="handleAuthUserQuery" />
+      </el-dialog>
    </div>
 </template>
 
 <script setup name="Role">
-import { addRole, changeRoleStatus, dataScope, delRole, getRole, listRole, updateRole, deptTreeSelect } from "@/api/system/role";
+import { addRole, changeRoleStatus, dataScope, delRole, getRole, listRole, updateRole, deptTreeSelect, allocatedUserList, authUserCancel, authUserCancelAll } from "@/api/system/role";
 import { roleMenuTreeselect, treeselect as menuTreeselect } from "@/api/system/menu";
+import selectUser from "./selectUser";
 
 const router = useRouter();
 const { proxy } = getCurrentInstance();
@@ -269,13 +319,29 @@ const deptOptions = ref([]);
 const openDataScope = ref(false);
 const menuRef = ref(null);
 const deptRef = ref(null);
+const selectRef = ref(null);
+const authUserDialog = reactive({
+  open: false,
+  loading: false,
+  userList: [],
+  total: 0,
+  userIds: [],
+  multiple: true,
+  query: {
+    pageNum: 1,
+    pageSize: 10,
+    roleId: undefined,
+    userName: undefined,
+    phonenumber: undefined
+  }
+});
 
 /** 数据范围选项*/
 const dataScopeOptions = ref([
   { value: "1", label: "全部数据权限" },
-  { value: "2", label: "自定数据权限" },
+  /*{ value: "2", label: "自定数据权限" },
   { value: "3", label: "本部门数据权限" },
-  { value: "4", label: "本部门及以下数据权限" },
+  { value: "4", label: "本部门及以下数据权限" },*/
   { value: "5", label: "仅本人数据权限" }
 ]);
 
@@ -365,7 +431,57 @@ function handleCommand(command, row) {
 }
 /** 分配用户 */
 function handleAuthUser(row) {
-  router.push("/system/role-auth/user/" + row.roleId);
+  authUserDialog.query.roleId = row.roleId;
+  authUserDialog.open = true;
+  getAuthUserList();
+}
+/** 查询已授权用户列表 */
+function getAuthUserList() {
+  authUserDialog.loading = true;
+  allocatedUserList(authUserDialog.query).then(response => {
+    authUserDialog.userList = response.rows;
+    authUserDialog.total = response.total;
+  }).finally(() => { authUserDialog.loading = false; });
+}
+/** 搜索已授权用户 */
+function handleAuthUserQuery() {
+  authUserDialog.query.pageNum = 1;
+  getAuthUserList();
+}
+/** 重置已授权用户搜索 */
+function resetAuthUserQuery() {
+  authUserDialog.query.userName = undefined;
+  authUserDialog.query.phonenumber = undefined;
+  handleAuthUserQuery();
+}
+/** 已授权用户多选 */
+function handleAuthUserSelectionChange(selection) {
+  authUserDialog.userIds = selection.map(item => item.userId);
+  authUserDialog.multiple = !selection.length;
+}
+/** 打开选择用户弹窗 */
+function openSelectUser() {
+  selectRef.value.show();
+}
+/** 取消单个用户授权 */
+function cancelAuthUser(row) {
+  proxy.$modal.confirm('确认要取消该用户“' + row.userName + '”角色吗？').then(() => {
+    return authUserCancel({ userId: row.userId, roleId: authUserDialog.query.roleId });
+  }).then(() => {
+    getAuthUserList();
+    proxy.$modal.msgSuccess('取消授权成功');
+  }).catch(() => {});
+}
+/** 批量取消用户授权 */
+function cancelAuthUserAll() {
+  const roleId = authUserDialog.query.roleId;
+  const uIds = authUserDialog.userIds.join(',');
+  proxy.$modal.confirm('是否取消选中用户授权数据项?').then(() => {
+    return authUserCancelAll({ roleId: roleId, userIds: uIds });
+  }).then(() => {
+    getAuthUserList();
+    proxy.$modal.msgSuccess('取消授权成功');
+  }).catch(() => {});
 }
 /** 查询菜单树结构 */
 function getMenuTreeselect() {

@@ -1,6 +1,7 @@
 <template>
    <div class="app-container">
-      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
+      <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px"
+               style="display: flex; flex-wrap: wrap; align-items: flex-start;">
          <el-form-item label="字典名称" prop="dictName">
             <el-input
                v-model="queryParams.dictName"
@@ -45,7 +46,7 @@
                :default-time="[new Date(2000, 1, 1, 0, 0, 0), new Date(2000, 1, 1, 23, 59, 59)]"
             ></el-date-picker>
          </el-form-item>
-         <el-form-item>
+         <el-form-item style="margin-left: auto">
             <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
             <el-button icon="Refresh" @click="resetQuery">重置</el-button>
          </el-form-item>

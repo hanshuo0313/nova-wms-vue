@@ -1,6 +1,7 @@
 <template>
   <div class="app-container">
-    <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
+    <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px"
+             style="display: flex; flex-wrap: wrap; align-items: flex-start;">
       <el-form-item label="用户名称" prop="userName">
         <el-input
           v-model="queryParams.userName"
@@ -45,7 +46,7 @@
           :default-time="[new Date(2000, 1, 1, 0, 0, 0), new Date(2000, 1, 1, 23, 59, 59)]"
         ></el-date-picker>
       </el-form-item>
-      <el-form-item>
+      <el-form-item style="margin-left: auto">
         <el-button type="primary" icon="Search" @click="handleQuery">搜索</el-button>
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
       </el-form-item>
@@ -124,19 +125,19 @@
           <span>{{ parseTime(scope.row.createTime) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" align="center" width="150" class-name="small-padding fixed-width">
+      <el-table-column label="操作" align="center" width="450" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-tooltip content="修改" placement="top" v-if="scope.row.userId !== 1">
-            <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:user:edit']"></el-button>
+            <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:user:edit']">修改</el-button>
           </el-tooltip>
           <el-tooltip content="删除" placement="top" v-if="scope.row.userId !== 1">
-            <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:user:remove']"></el-button>
+            <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:user:remove']">删除</el-button>
           </el-tooltip>
           <el-tooltip content="重置密码" placement="top" v-if="scope.row.userId !== 1">
-            <el-button link type="primary" icon="Key" @click="handleResetPwd(scope.row)" v-hasPermi="['system:user:resetPwd']"></el-button>
+            <el-button link type="primary" icon="Key" @click="handleResetPwd(scope.row)" v-hasPermi="['system:user:resetPwd']">重置密码</el-button>
           </el-tooltip>
           <el-tooltip content="分配角色" placement="top" v-if="scope.row.userId !== 1">
-            <el-button link type="primary" icon="CircleCheck" @click="handleAuthRole(scope.row)" v-hasPermi="['system:user:edit']"></el-button>
+            <el-button link type="primary" icon="CircleCheck" @click="handleAuthRole(scope.row)" v-hasPermi="['system:user:edit']">分配角色</el-button>
           </el-tooltip>
         </template>
       </el-table-column>
@@ -267,6 +268,7 @@
 
     <!-- 用户导入对话框 -->
     <el-dialog :title="upload.title" v-model="upload.open" width="400px" append-to-body>
+
       <el-upload
         ref="uploadRef"
         :limit="1"
@@ -298,12 +300,54 @@
         </div>
       </template>
     </el-dialog>
+    <!-- 分配角色对话框 -->
+    <el-dialog title="分配角色" v-model="authRoleDialog.open" width="600px" append-to-body :close-on-click-modal="false">
+      <el-form :model="authRoleDialog.form" label-width="80px">
+        <el-row>
+          <el-col :span="12">
+            <el-form-item label="用户昵称">
+              <el-input v-model="authRoleDialog.form.nickName" disabled />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="登录账号">
+              <el-input v-model="authRoleDialog.form.userName" disabled />
+            </el-form-item>
+          </el-col>
+        </el-row>
+      </el-form>
+      <el-table
+        v-loading="authRoleDialog.loading"
+        :row-key="(row) => row.roleId"
+        @row-click="clickRoleRow"
+        ref="roleRef"
+        @selection-change="handleRoleSelectionChange"
+        :data="authRoleDialog.roles"
+        max-height="300"
+      >
+        <el-table-column label="序号" width="55" type="index" align="center">
+          <template #default="scope">
+            <span>{{ scope.$index + 1 }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column type="selection" :reserve-selection="true" width="55"></el-table-column>
+        <el-table-column label="角色编号" align="center" prop="roleId" />
+        <el-table-column label="角色名称" align="center" prop="roleName" />
+        <el-table-column label="权限字符" align="center" prop="roleKey" />
+      </el-table>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="submitAuthRoleForm">确 定</el-button>
+          <el-button @click="authRoleDialog.open = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="User">
 import { getToken } from "@/utils/auth";
-import { changeUserStatus, listUser, resetUserPwd, delUser, getUser, updateUser, addUser, deptTreeSelect } from "@/api/system/user";
+import { changeUserStatus, listUser, resetUserPwd, delUser, getUser, updateUser, addUser, deptTreeSelect, getAuthRole, updateAuthRole } from "@/api/system/user";
 
 const router = useRouter();
 const { proxy } = getCurrentInstance();
@@ -323,6 +367,18 @@ const deptOptions = ref(undefined);
 const initPassword = ref(undefined);
 const postOptions = ref([]);
 const roleOptions = ref([]);
+const roleRef = ref(null);
+const authRoleDialog = reactive({
+  open: false,
+  loading: false,
+  roles: [],
+  roleIds: [],
+  form: {
+    nickName: '',
+    userName: '',
+    userId: null
+  }
+});
 const upload = reactive({
   open: false,
   title: "",
@@ -419,10 +475,36 @@ function handleCommand(command, row) {
       break;
   }
 };
+function clickRoleRow(row) {
+  roleRef.value?.toggleRowSelection(row);
+}
+function handleRoleSelectionChange(selection) {
+  authRoleDialog.roleIds = selection.map(item => item.roleId);
+}
 function handleAuthRole(row) {
   const userId = row.userId;
-  router.push("/system/user-auth/role/" + userId);
-};
+  authRoleDialog.loading = true;
+  authRoleDialog.open = true;
+  authRoleDialog.roleIds = [];
+  authRoleDialog.form = { nickName: row.nickName, userName: row.userName, userId: userId };
+  getAuthRole(userId).then(response => {
+    authRoleDialog.roles = response.data.roles || [];
+    nextTick(() => {
+      authRoleDialog.roles.forEach(r => {
+        if (r.flag) roleRef.value?.toggleRowSelection(r, true);
+      });
+    });
+  }).finally(() => { authRoleDialog.loading = false; });
+}
+function submitAuthRoleForm() {
+  const userId = authRoleDialog.form.userId;
+  const rIds = authRoleDialog.roleIds.join(',');
+  updateAuthRole({ userId, roleIds: rIds }).then(() => {
+    proxy.$modal.msgSuccess('授权成功');
+    authRoleDialog.open = false;
+    getList();
+  });
+}
 function handleResetPwd(row) {
   proxy.$prompt('请输入"' + row.userName + '"的新密码', "提示", {
     confirmButtonText: "确定",
