@@ -77,6 +77,16 @@ function initChart() {
   totalCount.value = total
 
   chart.value.setOption({
+    color: [
+      '#5b8ff9', // 天蓝
+      '#5ad8a6', // 薄荷绿
+      '#f6bd16', // 暖黄
+      '#74b9ff',
+      '#55efc4',
+      '#ff9845', // 橙色
+      '#1e9486', // 深青
+      '#6dc8ec', // 浅青
+    ],
     tooltip: {
       trigger: 'item',
       appendToBody: true,

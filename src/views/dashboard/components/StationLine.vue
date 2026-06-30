@@ -122,15 +122,15 @@ function setOptions() {
         show: false
       },
       axisLabel: {
-        rotate: isMultiSeries ? 45 : 0, // 多系列时旋转标签避免重叠
-        interval: 'auto' // 自动间隔显示标签
+        rotate: isMultiSeries ? 45 : 0,
+        interval: 'auto'
       }
     },
     grid: {
-      top: '15%',
+      top: isMultiSeries ? '22%' : '15%',
       left: '2%',
       right: '10%',
-      bottom: isMultiSeries ? '8%' : '0%', // 多系列时增加底部边距
+      bottom: '0%',
       containLabel: true
     },
     tooltip: {
@@ -152,11 +152,11 @@ function setOptions() {
     },
     legend: isMultiSeries ? {
       data: props.seriesData.map(s => s.name),
-      bottom: '0%', // 图例放在最底部
-      itemWidth: 12,
+      top: '0%',
+      itemWidth: 16,
       itemHeight: 8,
       textStyle: {
-        fontSize: 11
+        fontSize: 12
       }
     } : undefined,
     series: isMultiSeries ? props.seriesData.map((series, index) => ({
@@ -164,6 +164,15 @@ function setOptions() {
       type: 'line',
       smooth: true,
       data: series.data,
+      showSymbol: true,
+      symbolSize: 6,
+      itemStyle: {
+        color: colorPalette[index % colorPalette.length]
+      },
+      lineStyle: {
+        width: 2,
+        color: colorPalette[index % colorPalette.length]
+      },
       animationDuration: 1500,
       animationEasing: 'cubicInOut'
     })) : [{
