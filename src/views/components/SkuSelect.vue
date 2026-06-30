@@ -25,7 +25,7 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="商品单位">
+          <el-form-item label="供应商">
             <el-select v-model="query.unit" clearable filterable placeholder="请选择单位" style="width: 90%">
               <el-option v-for="item in useWmsStore().merchantList" :key="item.id" :label="item.merchantName" :value="item.id"/>
             </el-select>
@@ -58,7 +58,7 @@
           {{ row.item.itemCode }}
         </template>
       </el-table-column>
-      <el-table-column label="商品单位" align="center" min-width="90" show-overflow-tooltip>
+      <el-table-column label="供应商" align="center" min-width="90" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
         </template>
@@ -266,12 +266,13 @@ function clearQuantity() {
 }
 
 const getVolumeText = (row) => {
-  if((row.length || row.length === 0) && (row.width || row.width === 0) && (row.height || row.height === 0)) {
-    return row.length + ' * ' + row.width + ' * ' + row.height
+  const sku = row.itemSku || {}
+  if((sku.length || sku.length === 0) && (sku.width || sku.width === 0) && (sku.height || sku.height === 0)) {
+    return sku.length + ' * ' + sku.width + ' * ' + sku.height
   }
-  return ((row.length || row.length === 0) ? ('长：' + row.length) : '')
-    + ((row.width || row.width === 0) ? (' 宽：' + row.width) : '')
-    + ((row.height || row.height === 0) ? (' 高：' + row.height) : '')
+  return ((sku.length || sku.length === 0) ? ('长：' + sku.length) : '')
+    + ((sku.width || sku.width === 0) ? (' 宽：' + sku.width) : '')
+    + ((sku.height || sku.height === 0) ? (' 高：' + sku.height) : '')
 }
 defineExpose({
   getList

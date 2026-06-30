@@ -127,7 +127,7 @@
          </el-table-column>
         <el-table-column label="操作" align="center" width="320" class-name="small-padding fixed-width">
           <template #default="scope">
-            <el-button link type="primary" icon="Plus" @click="handleOpenDataPage(scope.row)" v-hasPermi="['system:dict:add']">新增数据</el-button>
+            <el-button link type="primary" icon="Plus" @click="handleOpenDataPage(scope.row)" v-hasPermi="['system:dict:add']">字典明细</el-button>
             <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['system:dict:edit']">修改</el-button>
             <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['system:dict:remove']">删除</el-button>
           </template>
@@ -273,6 +273,11 @@
            @pagination="getDataList"
          />
        </div>
+       <template #footer>
+         <div class="dialog-footer">
+           <el-button @click="dataPageOpen = false">关 闭</el-button>
+         </div>
+       </template>
      </el-dialog>
 
      <!-- 新增或修改字典数据对话框 -->

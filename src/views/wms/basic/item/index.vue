@@ -14,17 +14,17 @@
               v-for="item in useWmsStore().itemBrandList"
               :key="item.id"
               :label="item.brandName"
-              :value="item.id"
+              :value="String(item.id)"
             ></el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="商品单位" prop="unit">
+        <el-form-item label="供应商" prop="unit">
           <el-select v-model="queryParams.unit" clearable filterable placeholder="请选择单位">
             <el-option
               v-for="item in useWmsStore().merchantList"
               :key="item.id"
               :label="item.merchantName"
-              :value="item.id"
+              :value="String(item.id)"
             ></el-option>
           </el-select>
         </el-form-item>
@@ -68,44 +68,44 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="商品名称" prop="itemId" min-width="120" show-overflow-tooltip>
+          <el-table-column label="商品名称" prop="itemId" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemName }}
             </template>
           </el-table-column>
-          <el-table-column label="商品编号" prop="itemId" align="center" min-width="110" show-overflow-tooltip>
+          <el-table-column label="商品编号" prop="itemId" align="center" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemCode }}
             </template>
           </el-table-column>
-          <el-table-column label="商品单位" prop="itemId" align="center" min-width="90" show-overflow-tooltip>
+          <el-table-column label="供应商" prop="itemId" align="center" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
+              {{ row.item.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品分类" prop="itemId" align="center" min-width="100" show-overflow-tooltip>
+          <el-table-column label="商品分类" prop="itemId" align="center" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName : '' }}
+              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品品牌" prop="itemId" align="center" min-width="100" show-overflow-tooltip>
+          <el-table-column label="商品品牌" prop="itemId" align="center" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.itemBrand ? useWmsStore().itemBrandMap.get(row.item.itemBrand)?.brandName : '' }}
+              {{ row.item.itemBrand ? useWmsStore().itemBrandMap.get(String(row.item.itemBrand))?.brandName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品级别" prop="itemId" align="center" width="90">
+          <el-table-column label="商品级别" prop="itemId" align="center" min-width="100">
             <template #default="{ row }">
               <dict-tag :options="product_level" :value="row.item.itemLevel"/>
             </template>
           </el-table-column>
-          <el-table-column label="规格信息" prop="skuName" align="left" min-width="140" show-overflow-tooltip>
+          <el-table-column label="规格信息" prop="skuName" align="left" min-width="170" show-overflow-tooltip>
             <template #default="{ row }">
               <div>{{ row.itemSku.skuName }}</div>
               <div v-if="row.itemSku.skuCode">编号：{{ row.itemSku.skuCode }}</div>
 <!--                <div v-if="row.itemSku.barcode">条码：{{ row.itemSku.barcode }}</div>-->
             </template>
           </el-table-column>
-          <el-table-column label="金额(元)"  align="left">
+          <el-table-column label="金额(元)"  align="left" min-width="150">
             <template #default="{ row }">
               <div v-if="row.itemSku.costPrice" class="flex-space-between">
                 <span>成本价：</span>
@@ -117,7 +117,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="重量(kg)"  align="left">
+          <el-table-column label="重量(kg)"  align="left" min-width="140">
             <template #default="{ row }">
               <div v-if="row.itemSku.netWeight" class="flex-space-between">
                 <span>净重：</span>
@@ -133,7 +133,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="长宽高(cm)" align="left" >
+          <el-table-column label="长宽高(cm)" align="left" min-width="150">
             <template #default="{ row }">
               <div>{{ getVolumeText(row.itemSku) }}</div>
             </template>
@@ -230,13 +230,13 @@
                 </el-form-item>
               </el-col>
               <el-col :span="12">
-                <el-form-item label="商品单位" prop="unit">
+                <el-form-item label="供应商" prop="unit">
                   <el-select v-model="form.unit" clearable filterable placeholder="请选择单位" style="width: 100%!important;">
                     <el-option
                       v-for="item in useWmsStore().merchantList"
                       :key="item.id"
                       :label="item.merchantName"
-                      :value="item.id"
+                      :value="String(item.id)"
                     ></el-option>
                   </el-select>
                 </el-form-item>
@@ -250,7 +250,7 @@
                       v-for="item in useWmsStore().itemBrandList"
                       :key="item.id"
                       :label="item.brandName"
-                      :value="item.id"
+                      :value="String(item.id)"
                     ></el-option>
                   </el-select>
                 </el-form-item>
@@ -837,6 +837,10 @@ const handleUpdate = (row) => {
     Object.assign(skuForm.itemSkuList, res.data)
     skuLoading.value = false
     Object.assign(form.value, row.item);
+    // 统一转为字符串，与 el-select option value 和 Map key 类型一致
+    if (form.value.unit != null) form.value.unit = String(form.value.unit);
+    if (form.value.itemBrand != null) form.value.itemBrand = String(form.value.itemBrand);
+    if (form.value.itemCategory != null) form.value.itemCategory = String(form.value.itemCategory);
   });
 }
 const handleQueryType = (node, data) => {
@@ -933,9 +937,9 @@ const handleExport = async () => {
     const exportData = rows.map(row => ({
       '商品名称': row.item?.itemName || '',
       '商品编号': row.item?.itemCode || '',
-      '商品单位': row.item?.unit ? (store.merchantMap.get(row.item.unit)?.merchantName || '') : '',
-      '商品分类': row.item?.itemCategory ? (store.itemCategoryMap.get(row.item.itemCategory)?.categoryName || '') : '',
-      '商品品牌': row.item?.itemBrand ? (store.itemBrandMap.get(row.item.itemBrand)?.brandName || '') : '',
+      '供应商': row.item?.unit ? (store.merchantMap.get(String(row.item.unit))?.merchantName || '') : '',
+      '商品分类': row.item?.itemCategory ? (store.itemCategoryMap.get(String(row.item.itemCategory))?.categoryName || '') : '',
+      '商品品牌': row.item?.itemBrand ? (store.itemBrandMap.get(String(row.item.itemBrand))?.brandName || '') : '',
       '商品级别': getLevelLabel(row.item?.itemLevel),
       '规格名称': row.itemSku?.skuName || '',
       '规格编号': row.itemSku?.skuCode || '',

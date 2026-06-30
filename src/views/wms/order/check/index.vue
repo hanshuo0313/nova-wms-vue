@@ -57,7 +57,7 @@
         <el-table-column label="单号" align="left" prop="orderNo" />
         <el-table-column label="仓库" align="left" width="200">
           <template #default="{ row }">
-            <div>{{ useWmsStore().warehouseMap.get(row.warehouseId)?.warehouseName }}</div>
+            <div>{{ useWmsStore().warehouseMap.get(String(row.warehouseId))?.warehouseName }}</div>
           </template>
         </el-table-column>
         <el-table-column label="盘库状态" align="center" prop="orderStatus" width="120">
@@ -246,7 +246,7 @@ async function handlePrint(row) {
   const printData = {
     orderNo: checkOrder.orderNo,
     orderStatus: proxy.selectDictLabel(wms_check_status.value, checkOrder.orderStatus),
-    warehouseName: useWmsStore().warehouseMap.get(checkOrder.warehouseId)?.warehouseName,
+    warehouseName: useWmsStore().warehouseMap.get(String(checkOrder.warehouseId))?.warehouseName,
     totalQuantity: Number(checkOrder.totalQuantity).toFixed(0),
     createBy: checkOrder.createBy,
     createTime: proxy.parseTime(checkOrder.createTime, '{mm}-{dd} {hh}:{ii}'),

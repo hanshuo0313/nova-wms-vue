@@ -26,7 +26,7 @@
           </el-form-item>
         </el-col>
         <el-col :span="8">
-          <el-form-item label="商品单位">
+          <el-form-item label="供应商">
             <el-select v-model="query.unit" clearable filterable placeholder="请选择单位" style="width: 90%">
               <el-option v-for="item in useWmsStore().merchantList" :key="item.id" :label="item.merchantName" :value="item.id"/>
             </el-select>
@@ -60,7 +60,7 @@
           {{ row.item.itemCode }}
         </template>
       </el-table-column>
-      <el-table-column label="商品单位" align="center" min-width="60" show-overflow-tooltip>
+      <el-table-column label="供应商" align="center" min-width="60" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
         </template>

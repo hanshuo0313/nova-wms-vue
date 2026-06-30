@@ -95,9 +95,29 @@
             <div style="padding: 0 50px 20px 50px">
               <h3>商品明细</h3>
               <el-table :data="props.row.details" v-loading="detailLoading[props.$index]" empty-text="暂无商品明细">
-                <el-table-column label="商品名称">
+                <el-table-column label="商品名称" min-width="200">
                   <template #default="{ row }">
                     <div>{{ row?.item?.itemName }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品编号" min-width="140">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.itemCode || '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="供应商">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品分类" min-width="140">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品级别">
+                  <template #default="{ row }">
+                    <dict-tag :options="product_level" :value="row?.item?.itemLevel"/>
                   </template>
                 </el-table-column>
                 <el-table-column label="规格名称">
@@ -133,7 +153,7 @@
         </el-table-column>
         <el-table-column label="仓库" align="left">
           <template #default="{ row }">
-            <div>{{ useWmsStore().warehouseMap.get(row.warehouseId)?.warehouseName }}</div>
+            <div>{{ useWmsStore().warehouseMap.get(String(row.warehouseId))?.warehouseName }}</div>
           </template>
         </el-table-column>
         <el-table-column label="总数量/总金额(元)" align="left" min-width="100">
@@ -160,7 +180,7 @@
         </el-table-column>
         <el-table-column label="客户" align="left" prop="merchantId">
           <template #default="{ row }">
-            <div>{{ useWmsStore().merchantMap.get(row.merchantId)?.merchantName }}</div>
+            <div>{{ useWmsStore().merchantMap.get(String(row.merchantId))?.merchantName }}</div>
           </template>
         </el-table-column>
         <el-table-column label="操作时间" align="left" width="150">
@@ -233,7 +253,7 @@ import {useWmsStore} from "../../../../store/modules/wms";
 import shipmentPanel from "@/components/PrintTemplate/shipment-panel";
 
 const { proxy } = getCurrentInstance();
-const { wms_shipment_status, wms_shipment_type} = proxy.useDict("wms_shipment_status", "wms_shipment_type");
+const { wms_shipment_status, wms_shipment_type,product_level} = proxy.useDict("wms_shipment_status", "wms_shipment_type","product_level");
 const shipmentOrderList = ref([]);
 const open = ref(false);
 const buttonLoading = ref(false);
@@ -347,9 +367,9 @@ async function handlePrint(row) {
     orderNo: shipmentOrder.orderNo,
     optType: proxy.selectDictLabel(wms_shipment_type.value, shipmentOrder.optType),
     orderStatus: proxy.selectDictLabel(wms_shipment_status.value, shipmentOrder.orderStatus),
-    merchantName: useWmsStore().merchantMap.get(shipmentOrder.merchantId)?.merchantName,
+    merchantName: useWmsStore().merchantMap.get(String(shipmentOrder.merchantId))?.merchantName,
     bizOrderNo: shipmentOrder.bizOrderNo,
-    warehouseName: useWmsStore().warehouseMap.get(shipmentOrder.warehouseId)?.warehouseName,
+    warehouseName: useWmsStore().warehouseMap.get(String(shipmentOrder.warehouseId))?.warehouseName,
     totalQuantity: Number(shipmentOrder.totalQuantity).toFixed(0),
     totalAmount: ((shipmentOrder.totalAmount || shipmentOrder.totalAmount === 0) ? (shipmentOrder.totalAmount + '元') : ''),
     createBy: shipmentOrder.createBy,
@@ -384,7 +404,7 @@ function loadShipmentOrderDetail(row) {
       const details = res.data.map(it => {
         return {
           ...it,
-          warehouseName: useWmsStore().warehouseMap.get(it.warehouseId)?.warehouseName
+          warehouseName: useWmsStore().warehouseMap.get(String(it.warehouseId))?.warehouseName
         }
       })
       shipmentOrderList.value[index].details = details

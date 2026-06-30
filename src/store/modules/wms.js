@@ -16,7 +16,7 @@ export const useWmsStore = defineStore('wms', () => {
       warehouseList.value = res.data;
       const map = new Map();
       warehouseList.value.forEach((supplier) => {
-        map.set(supplier.id, supplier);
+        map.set(String(supplier.id), supplier);
       });
       warehouseMap.value = map;
     });
@@ -31,7 +31,7 @@ export const useWmsStore = defineStore('wms', () => {
       merchantList.value = res.data;
       const map = new Map();
       merchantList.value.forEach((supplier) => {
-        map.set(supplier.id, supplier);
+        map.set(String(supplier.id), supplier);
       });
       merchantMap.value = map;
     });
@@ -48,7 +48,7 @@ export const useWmsStore = defineStore('wms', () => {
         itemCategoryList.value = res.data;
         const map = new Map()
         itemCategoryList.value.forEach(supplier => {
-          map.set(supplier.id, supplier)
+          map.set(String(supplier.id), supplier)
         })
         itemCategoryMap.value = map
         resolve()
@@ -75,7 +75,7 @@ export const useWmsStore = defineStore('wms', () => {
         itemBrandList.value = res.data
         const map = new Map()
         itemBrandList.value.forEach(supplier => {
-          map.set(supplier.id, {...supplier})
+          map.set(String(supplier.id), {...supplier})
         })
         itemBrandMap.value = map
         resolve()

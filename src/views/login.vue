@@ -84,6 +84,7 @@ import useUserStore from '@/store/modules/user'
 
 const userStore = useUserStore()
 const router = useRouter();
+const route = useRoute();
 const { proxy } = getCurrentInstance();
 
 const loginForm = ref({
@@ -109,6 +110,10 @@ const register = ref(false);
 const redirect = ref(undefined);
 const dialogVisible = ref(false);
 
+watch(route, (newRoute) => {
+  redirect.value = newRoute.query && newRoute.query.redirect;
+}, { immediate: true });
+
 function handleTry(){
   dialogVisible.value =true
 }
@@ -133,7 +138,7 @@ function handleLogin() {
       }
       // 调用action的登录方法
       userStore.login(loginForm.value).then(() => {
-        router.push({ path: redirect.value || "/" });
+        router.push({ path: redirect.value || "/index" });
       }).catch(() => {
         loading.value = false;
         // 重新获取验证码

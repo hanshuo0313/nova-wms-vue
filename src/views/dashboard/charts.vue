@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container home">
+  <div class="app-container home" v-loading="pageLoading">
     <!-- 顶部统计卡片 -->
     <div class="station-top">
       <el-row :gutter="12" class="mt5">
@@ -10,7 +10,7 @@
             </div>
             <div class="stat-content">
               <div class="stat-label">总库存数量</div>
-              <div class="stat-value">{{ totalInventory }}</div>
+              <div class="stat-value">{{ totalInventory.toLocaleString() }}</div>
             </div>
           </div>
         </el-col>
@@ -32,12 +32,12 @@
             </div>
             <div class="stat-content">
               <div class="stat-label">商品种类</div>
-              <div class="stat-value">{{ itemCount }}</div>
+              <div class="stat-value">{{ itemCount.toLocaleString() }}</div>
             </div>
           </div>
         </el-col>
         <el-col :span="6">
-          <div class="top-item-box item-box-four">
+          <div class="top-item-box item-box-four low-stock-card" @click="handleLowStockClick">
             <div class="stat-icon">
               <el-icon :size="48"><Warning /></el-icon>
             </div>
@@ -49,6 +49,14 @@
         </el-col>
       </el-row>
     </div>
+
+    <!-- 空状态提示 -->
+    <template v-if="!pageLoading && isEmptyData">
+      <el-empty description="暂无库存数据" :image-size="200" style="margin-top: 60px;"/>
+    </template>
+
+    <!-- 图表区域 -->
+    <template v-else>
 
     <!-- 中间图表区域 -->
     <div class="station-middle">
@@ -99,6 +107,7 @@
         </el-col>
       </el-row>
     </div>
+    </template>
   </div>
 </template>
 
@@ -106,14 +115,21 @@
 import StationPie from './components/StationPie.vue'
 import StationLine from './components/StationLine.vue'
 import StationBar from './components/StationBar.vue'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { listInventoryBoard } from '@/api/wms/inventory'
 import { listInventoryHistory } from '@/api/wms/inventoryHistory'
 import { listLocation } from '@/api/wms/location'
 import { useWmsStore } from '@/store/modules/wms'
 import moment from 'moment'
 
+const router = useRouter()
 const wmsStore = useWmsStore()
+
+// 全局 loading
+const pageLoading = ref(true)
+const inventoryLoaded = ref(false)
+const locationLoaded = ref(false)
 
 // 顶部统计数据
 const totalInventory = ref(0)
@@ -131,6 +147,7 @@ const topBarChartData = ref({
   yData: []
 })
 const topXName = ref('件')
+const cachedItemData = ref([])
 
 // 库位柱状图
 const locationBarData = ref({
@@ -142,12 +159,18 @@ const locationSeriesData = ref([])
 // 趋势折线图
 const trendLineData = ref({
   xData: [],
-  series: [] // 改为 series 数组
+  series: []
+})
+
+// 空数据判断
+const isEmptyData = computed(() => {
+  return totalInventory.value === 0 && warehouseCount.value === 0 && itemCount.value === 0
 })
 
 onMounted(() => {
-  loadInventoryData()
-  loadLocationData()
+  Promise.all([loadInventoryData(), loadLocationData()]).finally(() => {
+    pageLoading.value = false
+  })
 })
 
 // 加载库存数据
@@ -158,6 +181,9 @@ async function loadInventoryData() {
 
     const itemRes = await listInventoryBoard({}, 'item')
     const itemData = itemRes.rows || []
+
+    // 缓存 itemData 供 Top10 切换使用
+    cachedItemData.value = itemData
 
     calculateTopStats(warehouseData, itemData)
 
@@ -193,7 +219,7 @@ function calculateTopStats(warehouseData, itemData) {
 function calculateWarehousePie(warehouseData) {
   const warehouseMap = {}
   warehouseData.forEach(item => {
-    const warehouseName = wmsStore.warehouseMap.get(item.warehouseId)?.warehouseName || '未知仓库'
+    const warehouseName = wmsStore.warehouseMap.get(String(item.warehouseId))?.warehouseName || '未知仓库'
     if (!warehouseMap[warehouseName]) {
       warehouseMap[warehouseName] = 0
     }
@@ -208,7 +234,6 @@ function calculateWarehousePie(warehouseData) {
 
 // 计算Top10柱状图
 function calculateTop10Bar(itemData) {
-  console.log('商品维度原始数据:', itemData)
 
   if (topType.value === 'quantity') {
     // 按数量统计
@@ -217,21 +242,15 @@ function calculateTop10Bar(itemData) {
       const itemName = item.item?.itemName || '未知商品'
       const quantity = Number(item.quantity || 0)
 
-      console.log(`商品: ${itemName}, 数量: ${quantity}`)
-
       if (!itemMap[itemName]) {
         itemMap[itemName] = 0
       }
       itemMap[itemName] += quantity
     })
 
-    console.log('按数量统计结果:', itemMap)
-
     const sorted = Object.entries(itemMap)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
-
-    console.log('Top10排序结果:', sorted)
 
     topBarChartData.value = {
       xData: sorted.map(item => item[0]),
@@ -260,7 +279,6 @@ function calculateTop10Bar(itemData) {
     topXName.value = '个'
   }
 
-  console.log('最终图表数据:', topBarChartData.value)
 }
 
 // 计算库位柱状图
@@ -272,7 +290,7 @@ async function loadLocationData() {
     const warehouseMap = {}
 
     locationList.forEach(location => {
-      const warehouseName = wmsStore.warehouseMap.get(location.warehouseId)?.warehouseName || '未知仓库'
+      const warehouseName = wmsStore.warehouseMap.get(String(location.warehouseId))?.warehouseName || '未知仓库'
 
       if (!warehouseMap[warehouseName]) {
         warehouseMap[warehouseName] = {
@@ -331,7 +349,6 @@ async function loadLocationData() {
   }
 }
 
-// ... existing code ...
 // 加载各仓库最近一个月的库存变化趋势
 async function loadWarehouseTrendData() {
   const endDate = new Date()
@@ -351,47 +368,54 @@ async function loadWarehouseTrendData() {
     const res = await listInventoryHistory(params)
     const historyData = res.rows || []
 
-    // 1. 收集所有仓库ID和日期（使用完整日期格式 YYYY-MM-DD）
-    const warehouseIds = new Set()
-    const dateMap = {} // 用对象存储，key为YYYY-MM-DD，value为MM-DD
-
+    // 1. 收集所有日期（YYYY-MM-DD -> MM-DD）
+    const dateMap = {}
     historyData.forEach(item => {
-      if (item.warehouseId && item.createTime) {
-        warehouseIds.add(item.warehouseId)
+      if (item.createTime) {
         const fullDate = moment(item.createTime).format('YYYY-MM-DD')
         const shortDate = moment(item.createTime).format('MM-DD')
         dateMap[fullDate] = shortDate
       }
     })
 
-    // 2. 排序完整日期，然后转换为短日期
-    const sortedDates = Object.keys(dateMap)
-      .sort((a, b) => new Date(a) - new Date(b))
-      .map(fullDate => dateMap[fullDate])
+    const sortedFullDates = Object.keys(dateMap).sort((a, b) => new Date(a) - new Date(b))
+    const sortedDates = sortedFullDates.map(d => dateMap[d])
 
-    // 3. 按仓库和日期分组统计 afterQuantity
-    const warehouseDailyMap = {}
-    warehouseIds.forEach(warehouseId => {
-      warehouseDailyMap[warehouseId] = {}
-      sortedDates.forEach(shortDate => {
-        warehouseDailyMap[warehouseId][shortDate] = 0
-      })
-    })
-
+    // 2. 按 warehouse+sku+date 分组，取每个 SKU 每天最后一条 afterQuantity（快照值）
+    const skuDailyMap = {} // key: warehouseId_skuId_shortDate -> { createTime, afterQuantity }
     historyData.forEach(item => {
       if (item.warehouseId && item.createTime && item.afterQuantity !== undefined) {
         const shortDate = moment(item.createTime).format('MM-DD')
-        if (warehouseDailyMap[item.warehouseId] && warehouseDailyMap[item.warehouseId].hasOwnProperty(shortDate)) {
-          warehouseDailyMap[item.warehouseId][shortDate] += Number(item.afterQuantity) || 0
+        const key = `${item.warehouseId}_${item.skuId || item.itemId}_${shortDate}`
+        const existing = skuDailyMap[key]
+        // 取时间最晚的一条记录（最新快照）
+        if (!existing || item.createTime > existing.createTime) {
+          skuDailyMap[key] = {
+            createTime: item.createTime,
+            afterQuantity: Number(item.afterQuantity) || 0,
+            warehouseId: item.warehouseId
+          }
         }
       }
+    })
+
+    // 3. 按 warehouse+date 汇总所有 SKU 的库存
+    const warehouseIds = new Set()
+    const warehouseDailyMap = {} // key: warehouseId_shortDate -> totalQuantity
+    Object.values(skuDailyMap).forEach(record => {
+      const shortDate = moment(record.createTime).format('MM-DD')
+      const key = `${record.warehouseId}_${shortDate}`
+      warehouseIds.add(record.warehouseId)
+      warehouseDailyMap[key] = (warehouseDailyMap[key] || 0) + record.afterQuantity
     })
 
     // 4. 构建图表数据
     const series = []
     warehouseIds.forEach(warehouseId => {
-      const warehouseName = wmsStore.warehouseMap.get(warehouseId)?.warehouseName || '未知仓库'
-      const data = sortedDates.map(date => warehouseDailyMap[warehouseId][date])
+      const warehouseName = wmsStore.warehouseMap.get(String(warehouseId))?.warehouseName || '未知仓库'
+      const data = sortedDates.map(shortDate => {
+        return warehouseDailyMap[`${warehouseId}_${shortDate}`] || 0
+      })
 
       series.push({
         name: warehouseName,
@@ -415,11 +439,14 @@ async function loadWarehouseTrendData() {
 }
 
 
-// 切换Top类型
+// 切换Top类型（使用缓存数据，不重复请求）
 function handleTopTypeChange() {
-  listInventoryBoard({}, 'item').then(res => {
-    calculateTop10Bar(res.rows || [])
-  })
+  calculateTop10Bar(cachedItemData.value)
+}
+
+// 点击低库存预警卡片
+function handleLowStockClick() {
+  router.push('/inventory')
 }
 </script>
 
@@ -480,6 +507,15 @@ function handleTopTypeChange() {
 .item-box-four {
   background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
   box-shadow: 0 4px 12px rgba(250, 112, 154, 0.3);
+}
+
+.low-stock-card {
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.low-stock-card:hover {
+  transform: translateY(-3px);
 }
 
 .box-card {

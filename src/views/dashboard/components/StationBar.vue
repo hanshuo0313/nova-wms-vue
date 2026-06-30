@@ -146,4 +146,16 @@ watch(()=>props.chartData, (value) => {
     initChart();
   });
 })
+
+watch(()=>props.seriesData, (value) => {
+  nextTick(() => {
+    if (!chart.value) {
+      initChart();
+      return;
+    }
+    chart.value.dispose();
+    chart.value = null;
+    initChart();
+  });
+}, { deep: true })
 </script>

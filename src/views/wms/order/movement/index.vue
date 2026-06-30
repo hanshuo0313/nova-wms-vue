@@ -61,9 +61,29 @@
             <div style="padding: 0 50px 20px 50px">
               <h3>商品明细</h3>
               <el-table :data="props.row.details" v-loading="detailLoading[props.$index]" empty-text="暂无商品明细">
-                <el-table-column label="商品名称">
+                <el-table-column label="商品名称" min-width="200">
                   <template #default="{ row }">
                     <div>{{ row?.item?.itemName }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品编号" min-width="140">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.itemCode || '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="供应商">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品分类" min-width="140">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品级别">
+                  <template #default="{ row }">
+                    <dict-tag :options="product_level" :value="row?.item?.itemLevel"/>
                   </template>
                 </el-table-column>
                 <el-table-column label="规格名称">
@@ -94,12 +114,12 @@
         <el-table-column label="单号" align="left" prop="orderNo" min-width="100"/>
         <el-table-column label="源仓库" align="left">
           <template #default="{ row }">
-            <div>{{ useWmsStore().warehouseMap.get(row.sourceWarehouseId)?.warehouseName }}</div>
+            <div>{{ useWmsStore().warehouseMap.get(String(row.sourceWarehouseId))?.warehouseName }}</div>
           </template>
         </el-table-column>
         <el-table-column label="目标仓库" align="left">
           <template #default="{ row }">
-            <div>{{ useWmsStore().warehouseMap.get(row.targetWarehouseId)?.warehouseName }}</div>
+            <div>{{ useWmsStore().warehouseMap.get(String(row.targetWarehouseId))?.warehouseName }}</div>
           </template>
         </el-table-column>
         <el-table-column label="移库状态" align="center" prop="orderStatus" width="80">
@@ -190,7 +210,7 @@ import {ElMessageBox} from "element-plus";
 import movementPanel from "@/components/PrintTemplate/movement-panel";
 
 const { proxy } = getCurrentInstance();
-const { wms_movement_status } = proxy.useDict("wms_movement_status");
+const { wms_movement_status,product_level } = proxy.useDict("wms_movement_status","product_level");
 const movementOrderList = ref([]);
 const open = ref(false);
 const buttonLoading = ref(false);
@@ -301,8 +321,8 @@ async function handlePrint(row) {
   const printData = {
     orderNo: movementOrder.orderNo,
     orderStatus: proxy.selectDictLabel(wms_movement_status.value, movementOrder.orderStatus),
-    sourceWarehouseName: useWmsStore().warehouseMap.get(movementOrder.sourceWarehouseId)?.warehouseName,
-    targetWarehouseName: useWmsStore().warehouseMap.get(movementOrder.targetWarehouseId)?.warehouseName,
+    sourceWarehouseName: useWmsStore().warehouseMap.get(String(movementOrder.sourceWarehouseId))?.warehouseName,
+    targetWarehouseName: useWmsStore().warehouseMap.get(String(movementOrder.targetWarehouseId))?.warehouseName,
     totalQuantity: Number(movementOrder.totalQuantity).toFixed(0),
     createBy: movementOrder.createBy,
     createTime: proxy.parseTime(movementOrder.createTime, '{mm}-{dd} {hh}:{ii}'),
@@ -338,8 +358,8 @@ function loadMovementOrderDetail(row) {
       const details = res.data.map(it => {
         return {
           ...it,
-          sourceWarehouseName: useWmsStore().warehouseMap.get(it.sourceWarehouseId)?.warehouseName,
-          targetWarehouseName: useWmsStore().warehouseMap.get(it.targetWarehouseId)?.warehouseName,
+          sourceWarehouseName: useWmsStore().warehouseMap.get(String(it.sourceWarehouseId))?.warehouseName,
+          targetWarehouseName: useWmsStore().warehouseMap.get(String(it.targetWarehouseId))?.warehouseName,
         }
       })
       movementOrderList.value[index].details = details

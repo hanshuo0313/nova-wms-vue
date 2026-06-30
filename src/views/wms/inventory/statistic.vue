@@ -22,7 +22,7 @@
         <el-form-item class="col4" label="商品编号" prop="itemCode">
           <el-input v-model="queryParams.itemCode" clearable placeholder="商品编号"></el-input>
         </el-form-item>
-        <el-form-item class="col4" label="商品单位" prop="unit">
+        <el-form-item class="col4" label="供应商" prop="unit">
           <el-select style="width: 100%" v-model="queryParams.unit" placeholder="请选择单位" filterable clearable>
             <el-option v-for="item in useWmsStore().merchantList" :key="item.id" :label="item.merchantName" :value="item.id"/>
           </el-select>
@@ -55,37 +55,37 @@
       <el-table :data="inventoryList" border :span-method="spanMethod"
                 cell-class-name="vertical-top-cell" v-loading="loading" empty-text="暂无库存">
         <template v-if="queryType == 'warehouse'">
-          <el-table-column label="仓库" prop="warehouseId">
+          <el-table-column label="仓库" prop="warehouseId" min-width="120">
             <template #default="{ row }">
-              <div>{{ useWmsStore().warehouseMap.get(row.warehouseId)?.warehouseName }}</div>
+              <div>{{ useWmsStore().warehouseMap.get(String(row.warehouseId))?.warehouseName }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="商品名称" prop="itemId" min-width="120" show-overflow-tooltip>
+          <el-table-column label="商品名称" prop="itemId" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemName }}
             </template>
           </el-table-column>
-          <el-table-column label="商品编号" align="center" min-width="110" show-overflow-tooltip>
+          <el-table-column label="商品编号" align="center" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemCode }}
             </template>
           </el-table-column>
-          <el-table-column label="商品单位" align="center" min-width="90" show-overflow-tooltip>
+          <el-table-column label="供应商" align="center" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
+              {{ row.item.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品分类" align="center" min-width="100" show-overflow-tooltip>
+          <el-table-column label="商品分类" align="center" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName : '' }}
+              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品级别" align="center" width="90">
+          <el-table-column label="商品级别" align="center" min-width="100">
             <template #default="{ row }">
               <dict-tag :options="product_level" :value="row.item.itemLevel"/>
             </template>
           </el-table-column>
-          <el-table-column label="规格信息" :prop="skuId">
+          <el-table-column label="规格信息" :prop="skuId" min-width="170">
             <template #default="{ row }">
               <div>{{ row.itemSku.skuName }}</div>
               <div v-if="row.itemSku.skuCode">规格编号：{{ row.itemSku.skuCode }}</div>
@@ -93,49 +93,49 @@
           </el-table-column>
         </template>
         <template v-else>
-          <el-table-column label="商品名称" prop="itemId" min-width="120" show-overflow-tooltip>
+          <el-table-column label="商品名称" prop="itemId" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemName }}
             </template>
           </el-table-column>
-          <el-table-column label="商品编号" align="center" min-width="110" show-overflow-tooltip>
+          <el-table-column label="商品编号" align="center" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemCode }}
             </template>
           </el-table-column>
-          <el-table-column label="商品单位" align="center" min-width="90" show-overflow-tooltip>
+          <el-table-column label="供应商" align="center" min-width="120" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.unit ? useWmsStore().merchantMap.get(row.item.unit)?.merchantName : '' }}
+              {{ row.item.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品分类" align="center" min-width="100" show-overflow-tooltip>
+          <el-table-column label="商品分类" align="center" min-width="130" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(row.item.itemCategory)?.categoryName : '' }}
+              {{ row.item.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '' }}
             </template>
           </el-table-column>
-          <el-table-column label="商品级别" align="center" width="90">
+          <el-table-column label="商品级别" align="center" min-width="100">
             <template #default="{ row }">
               <dict-tag :options="product_level" :value="row.item.itemLevel"/>
             </template>
           </el-table-column>
-          <el-table-column label="规格信息" prop="skuId">
+          <el-table-column label="规格信息" prop="skuId" min-width="170">
             <template #default="{ row }">
               <div>{{ row.itemSku.skuName }}</div>
               <div v-if="row.itemSku.skuCode">规格编号：{{ row.itemSku.skuCode }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="仓库" prop="skuIdAndWarehouseId">
+          <el-table-column label="仓库" prop="skuIdAndWarehouseId" min-width="120">
             <template #default="{row}">
-              <div>{{ useWmsStore().warehouseMap.get(row.warehouseId)?.warehouseName }}</div>
+              <div>{{ useWmsStore().warehouseMap.get(String(row.warehouseId))?.warehouseName }}</div>
             </template>
           </el-table-column>
         </template>
-        <el-table-column label="库位编号">
+        <el-table-column label="库位编号" min-width="110">
           <template #default="{ row }">
             <div>{{ row.stockCode || '-' }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="库存" prop="quantity" align="center">
+        <el-table-column label="库存" prop="quantity" align="center" min-width="100">
           <template #default="{ row }">
             <el-statistic :value="Number(row.quantity)" :precision="0"/>
           </template>
@@ -277,11 +277,11 @@ const handleExport = async () => {
 
     // 构建导出数据
     const exportData = rows.map(row => ({
-      '仓库': store.warehouseMap.get(row.warehouseId)?.warehouseName || '',
+      '仓库': store.warehouseMap.get(String(row.warehouseId))?.warehouseName || '',
       '商品名称': row.item?.itemName || '',
       '商品编号': row.item?.itemCode || '',
-      '商品单位': row.item?.unit ? (store.merchantMap.get(row.item.unit)?.merchantName || '') : '',
-      '商品分类': row.item?.itemCategory ? (store.itemCategoryMap.get(row.item.itemCategory)?.categoryName || '') : '',
+      '供应商': row.item?.unit ? (store.merchantMap.get(String(row.item.unit))?.merchantName || '') : '',
+      '商品分类': row.item?.itemCategory ? (store.itemCategoryMap.get(String(row.item.itemCategory))?.categoryName || '') : '',
       '商品级别': getLevelLabel(row.item?.itemLevel),
       '规格名称': row.itemSku?.skuName || '',
       '规格编号': row.itemSku?.skuCode || '',

@@ -435,6 +435,9 @@ const loadDetail = (id) => {
   loading.value = true
   getReceiptOrder(id).then((response) => {
     form.value = {...response.data}
+    // 统一转为数字，与 el-select option value 类型一致
+    if (form.value.warehouseId != null) form.value.warehouseId = Number(form.value.warehouseId)
+    if (form.value.merchantId != null) form.value.merchantId = Number(form.value.merchantId)
     if (response.data.details?.length) {
       selectedSku.value = response.data.details.map(it => {
         return {

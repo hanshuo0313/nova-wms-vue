@@ -7,9 +7,24 @@
     </div>
     <el-table :data="list" border empty-text="暂无商品明细" v-loading="loading" ref="inventorySelectFormRef"
               cell-class-name="my-cell" class="mt20">
-      <el-table-column label="商品名称">
+      <el-table-column label="商品名称" min-width="200">
         <template #default="{ row }">
           <div>{{ row?.item?.itemName }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="商品编号" min-width="140">
+        <template #default="{ row }">
+          <div>{{ row?.item?.itemCode || '-' }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="供应商">
+        <template #default="{ row }">
+          <div>{{ row?.item?.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '-' }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="商品分类" min-width="140">
+        <template #default="{ row }">
+          <div>{{ row?.item?.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '-' }}</div>
         </template>
       </el-table-column>
       <el-table-column label="规格名称">
@@ -55,6 +70,7 @@
 <script setup>
 import {computed, reactive, ref} from "vue";
 import {listCheckOrderDetail} from "@/api/wms/checkOrderDetail";
+import {useWmsStore} from "@/store/modules/wms";
 
 const list = ref([]);
 const props = defineProps({

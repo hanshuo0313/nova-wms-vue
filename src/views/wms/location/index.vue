@@ -580,6 +580,10 @@ function handleUpdate(row) {
   const _id = row.id || ids.value
   getLocation(_id).then(response => {
     form.value = response.data;
+    // 将 warehouseId 转为数字，确保与 el-option 的 value 类型一致
+    if (form.value.warehouseId != null) {
+      form.value.warehouseId = Number(form.value.warehouseId);
+    }
     // 将 status 转换为字符串，确保与字典 value 类型一致
     if (form.value.status !== null && form.value.status !== undefined) {
       form.value.status = String(form.value.status);
@@ -619,7 +623,7 @@ function submitForm() {
 /** 删除按钮操作 */
 function handleDelete(row) {
   const _ids = row.id || ids.value;
-  proxy.$modal.confirm('是否确认删除库位管理编号为"' + _ids + '"的数据项？').then(function() {
+  proxy.$modal.confirm('是否确认删除库位管理编号为"' + row.stockCode + '"的数据项？').then(function() {
     loading.value = true;
     return delLocation(_ids);
   }).then(() => {
@@ -751,9 +755,11 @@ function generateQrcodeBlob(codeValue) {
 // 获取仓库名称
 function getWarehouseName(warehouseId) {
   if (!warehouseId) return '-'
-  const warehouse = useWmsStore().warehouseList.find(item => item.id === warehouseId)
+  const warehouse = useWmsStore().warehouseList.find(item => String(item.id) === String(warehouseId))
   return warehouse ? warehouse.warehouseName : '-'
 }
 
+// 加载仓库列表数据
+useWmsStore().getWarehouseList();
 getList();
 </script>

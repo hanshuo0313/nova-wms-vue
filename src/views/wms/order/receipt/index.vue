@@ -3,7 +3,7 @@
     <el-card>
       <el-form :model="queryParams" ref="queryRef" :inline="true" label-width="68px" style="display: flex; flex-wrap: wrap; align-items: flex-start;">
         <el-form-item label="入库状态" prop="receiptOrderStatus">
-          <el-radio-group v-model="queryParams.orderStatus" @change="handleQuery">
+          <el-radio-group v-model="queryParams.receiptOrderStatus" @change="handleQuery">
             <el-radio-button
               :key="-2"
               :label="-2"
@@ -96,9 +96,29 @@
             <div style="padding: 0 50px 20px 50px">
               <h3>商品明细</h3>
               <el-table :data="props.row.details" v-loading="detailLoading[props.$index]" empty-text="暂无商品明细">
-                <el-table-column label="商品名称">
+                <el-table-column label="商品名称" min-width="200">
                   <template #default="{ row }">
                     <div>{{ row?.item?.itemName }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品编号" min-width="140">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.itemCode || '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="供应商">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.unit ? useWmsStore().merchantMap.get(String(row.item.unit))?.merchantName : '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品分类" min-width="140">
+                  <template #default="{ row }">
+                    <div>{{ row?.item?.itemCategory ? useWmsStore().itemCategoryMap.get(String(row.item.itemCategory))?.categoryName : '-' }}</div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="商品级别">
+                  <template #default="{ row }">
+                    <dict-tag :options="product_level" :value="row?.item?.itemLevel"/>
                   </template>
                 </el-table-column>
                 <el-table-column label="规格名称">
@@ -106,6 +126,11 @@
                     <div>{{ row?.itemSku?.skuName }}</div>
                   </template>
                 </el-table-column>
+<!--                <el-table-column label="规格编号">
+                  <template #default="{ row }">
+                    <div>{{ row?.itemSku?.skuCode || '-' }}</div>
+                  </template>
+                </el-table-column>-->
                 <el-table-column label="库位编号">
                   <template #default="{ row }">
                     <div>{{ row.stockCode || '-' }}</div>
@@ -134,7 +159,7 @@
         </el-table-column>
         <el-table-column label="仓库" align="left">
           <template #default="{ row }">
-            <div>{{ useWmsStore().warehouseMap.get(row.warehouseId)?.warehouseName }}</div>
+            <div>{{ useWmsStore().warehouseMap.get(String(row.warehouseId))?.warehouseName }}</div>
           </template>
         </el-table-column>
         <el-table-column label="总数量/总金额(元)" align="left" min-width="100">
@@ -161,7 +186,7 @@
         </el-table-column>
         <el-table-column label="供应商" align="left" prop="merchantId">
           <template #default="{ row }">
-            <div>{{ useWmsStore().merchantMap.get(row.merchantId)?.merchantName }}</div>
+            <div>{{ useWmsStore().merchantMap.get(String(row.merchantId))?.merchantName }}</div>
           </template>
         </el-table-column>
 
@@ -238,7 +263,7 @@ import {ElMessageBox} from "element-plus";
 import receiptPanel from "@/components/PrintTemplate/receipt-panel";
 
 const { proxy } = getCurrentInstance();
-const { wms_receipt_status, wms_receipt_type } = proxy.useDict("wms_receipt_status", "wms_receipt_type");
+const { wms_receipt_status, wms_receipt_type, product_level } = proxy.useDict("wms_receipt_status", "wms_receipt_type", "product_level");
 const receiptOrderList = ref([]);
 const open = ref(false);
 const buttonLoading = ref(false);
@@ -352,9 +377,9 @@ async function handlePrint(row) {
     orderNo: receiptOrder.orderNo,
     optType: proxy.selectDictLabel(wms_receipt_type.value, receiptOrder.optType),
     orderStatus: proxy.selectDictLabel(wms_receipt_status.value, receiptOrder.orderStatus),
-    merchantName: useWmsStore().merchantMap.get(receiptOrder.merchantId)?.merchantName,
+    merchantName: useWmsStore().merchantMap.get(String(receiptOrder.merchantId))?.merchantName,
     bizOrderNo: receiptOrder.bizOrderNo,
-    warehouseName: useWmsStore().warehouseMap.get(receiptOrder.warehouseId)?.warehouseName,
+    warehouseName: useWmsStore().warehouseMap.get(String(receiptOrder.warehouseId))?.warehouseName,
     totalQuantity: Number(receiptOrder.totalQuantity).toFixed(0),
     totalAmount: ((receiptOrder.totalAmount || receiptOrder.totalAmount === 0) ? (receiptOrder.totalAmount + '元') : ''),
     createBy: receiptOrder.createBy,
@@ -389,7 +414,7 @@ function loadReceiptOrderDetail(row) {
       const details = res.data.map(it => {
         return {
           ...it,
-          warehouseName: useWmsStore().warehouseMap.get(it.warehouseId)?.warehouseName,
+          warehouseName: useWmsStore().warehouseMap.get(String(it.warehouseId))?.warehouseName,
         }
       })
       receiptOrderList.value[index].details = details
