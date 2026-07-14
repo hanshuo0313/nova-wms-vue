@@ -1,6 +1,6 @@
 // src/plugins/immersiveTranslate.js
 import axios from 'axios';
-import { getEnabled as fetchGlossary } from '@/api/wms/glossary';
+// import { getEnabled as fetchGlossary } from '@/api/wms/glossary'; // 改用 translateAxios 避免触发 401 弹窗
 
 export default {
   install(app, options = {}) {
@@ -162,17 +162,28 @@ export default {
         }
       } catch (e) { /* 忽略缓存读取错误 */ }
 
-      // 2. 从后端 API 更新（使用带 Token 的请求工具）
+      // 2. 从后端 API 更新（使用独立 axios 实例，避免触发认证拦截器的 401 弹窗）
       try {
-        const res = await fetchGlossary(currentTargetLang);
-        const data = res?.data || res?.rows || null;
+        // 从 Cookie 获取 Token（与项目 auth.js 中的 TokenKey 一致）
+        const token = document.cookie.split('; ').find(row => row.startsWith('Admin-Token='))?.split('=')[1] || '';
+        
+        // 词典 API 在 WMS 后端，需要通过代理前缀访问
+        const baseApi = import.meta.env.VITE_APP_BASE_API || '/dev-api';
+        const res = await translateAxios.get(`${baseApi}/wms/glossary/enabled`, {
+          params: { targetLang: currentTargetLang },
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : ''
+          }
+        });
+        const data = res?.data?.data || res?.data?.rows || null;
         if (data && typeof data === 'object' && !Array.isArray(data)) {
           glossaryMap.clear();
           Object.entries(data).forEach(([zh, translated]) => glossaryMap.set(zh.trim(), translated));
           localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-          console.log(`[翻译插件] 词典[${currentTargetLang}]从 API 更新，共 ${glossaryMap.size} 条`);
+          console.log(`[翻译插件] 词典[${currentTargetLang}]从 API 更新成功，共 ${glossaryMap.size} 条`);
+          console.log(`[翻译插件] 词典内容:`, Object.fromEntries(glossaryMap));
         } else {
-          console.warn(`[翻译插件] 词典[${currentTargetLang}] API 返回格式异常:`, res);
+          console.warn(`[翻译插件] 词典[${currentTargetLang}] API 返回格式异常:`, res?.data);
         }
       } catch (e) {
         console.warn(`[翻译插件] 词典[${currentTargetLang}] API 请求失败，使用缓存版本`, e.message);
@@ -1116,6 +1127,21 @@ export default {
           translationCache.clear();
           localStorage.removeItem(cacheStorageKey);
           console.log('[翻译插件] 缓存已清空');
+        },
+        // 清除术语词典缓存（内存 + localStorage）
+        clearGlossary: () => {
+          // 清除内存中的词典 Map
+          glossaryMap.clear();
+          // 清除所有语言的 localStorage 词典缓存
+          const keysToRemove = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('translation_glossary_v1_')) {
+              keysToRemove.push(key);
+            }
+          }
+          keysToRemove.forEach(key => localStorage.removeItem(key));
+          console.log(`[翻译插件] 术语词典已清空，共清除 ${keysToRemove.length} 条缓存`);
         },
         size: () => translationCache.size,
         stats: () => {

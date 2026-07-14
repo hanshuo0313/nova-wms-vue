@@ -223,6 +223,7 @@ function submitForm() {
           proxy.$modal.msgSuccess("修改成功");
           open.value = false;
           getList();
+          refreshGlossaryCache(); // 自动刷新翻译词典缓存
         }).finally(() => {
           buttonLoading.value = false;
         });
@@ -231,6 +232,7 @@ function submitForm() {
           proxy.$modal.msgSuccess("新增成功");
           open.value = false;
           getList();
+          refreshGlossaryCache(); // 自动刷新翻译词典缓存
         }).finally(() => {
           buttonLoading.value = false;
         });
@@ -248,6 +250,7 @@ function handleDelete(row) {
   }).then(() => {
     loading.value = true;
     getList();
+    refreshGlossaryCache(); // 删除后也自动刷新缓存
     proxy.$modal.msgSuccess("删除成功");
   }).catch(() => {
   }).finally(() => {
@@ -260,6 +263,14 @@ function handleExport() {
   proxy.download('wms/glossary/export', {
     ...queryParams.value
   }, `glossary_${new Date().getTime()}.xlsx`)
+}
+
+/** 内部方法：刷新翻译词典缓存（内存 + localStorage） */
+function refreshGlossaryCache() {
+  if (window.__translationCache && typeof window.__translationCache.clearGlossary === 'function') {
+    window.__translationCache.clearGlossary();
+    console.log('[术语词典] 已自动刷新翻译词典缓存');
+  }
 }
 
 getList();

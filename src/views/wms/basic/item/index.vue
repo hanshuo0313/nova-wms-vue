@@ -213,6 +213,8 @@
                     value-key="id"
                     placeholder="请选择分类"
                     check-strictly
+                    :render-after-expand="false"
+                    filterable
                     style="width: 100%!important;"
                   />
                 </el-form-item>
@@ -518,7 +520,20 @@ const resolveItemImages = async (items) => {
     });
   } catch (e) { /* ignore */ }
 };
-const itemCategoryTreeSelectList = computed(() => useWmsStore().itemCategoryTreeList);
+// 递归转换树形数据，确保 label 是中文名称而非数字 ID，id 统一转为字符串
+const transformCategoryTree = (nodes) => {
+  if (!Array.isArray(nodes)) return []
+  return nodes.map(node => ({
+    id: String(node.id),  // 统一转为字符串，避免类型不匹配
+    label: node.categoryName || node.name || node.label || String(node.id),
+    children: node.children ? transformCategoryTree(node.children) : []
+  }))
+}
+
+const itemCategoryTreeSelectList = computed(() => {
+  const rawList = useWmsStore().itemCategoryTreeList
+  return transformCategoryTree(rawList)
+})
 const itemCategoryTreeOptionsList = computed(() => {
   let data = [...itemCategoryTreeSelectList.value];
   data.unshift({
@@ -709,7 +724,7 @@ const skuForm = reactive({
 })
 const skuFormRef = ref(ElForm)
 const skuRules = {
-  skuName: [{required: true, message: '规格名称不能为空', trigger: 'blur'}]
+  skuName: [{required: false, message: '规格名称不能为空', trigger: 'blur'}]
 }
 // sku 管理
 const resetItemSkuList = () => {
@@ -1357,6 +1372,7 @@ onMounted(() => {
   nextTick(()=>{
     getList();
     useWmsStore().getMerchantList();
+    useWmsStore().getItemCategoryTreeList();  // 确保分类树数据加载
     if (route.query.openDrawer) {
       handleAdd()
     }
