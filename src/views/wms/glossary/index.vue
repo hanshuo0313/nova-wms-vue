@@ -54,6 +54,19 @@
             @click="handleExport"
             v-hasPermi="['wms:glossary:export']"
           >导出</el-button>
+          <el-button
+            type="primary"
+            plain
+            icon="Upload"
+            @click="importDialog.visible = true"
+            v-hasPermi="['wms:glossary:add']"
+          >文件数据导入</el-button>
+          <el-button
+            type="info"
+            plain
+            icon="Refresh"
+            @click="handleRefreshCache"
+          >刷新缓存</el-button>
         </el-col>
       </el-row>
 
@@ -112,11 +125,41 @@
         </div>
       </template>
     </el-dialog>
+    <!-- 文件数据导入对话框 -->
+    <el-dialog title="文件数据导入" v-model="importDialog.visible" width="550px" append-to-body :close-on-click-modal="false">
+      <div style="margin-bottom: 12px; color: #606266; font-size: 13px;">
+        <div>1. 请先 <el-button link type="primary" @click="downloadImportTemplate">下载导入模板</el-button>，按模板格式填写数据</div>
+        <div>2. 仅支持 .xlsx / .xls 格式文件</div>
+        <div>3. 原文、译文、目标语言 为必填项</div>
+        <div>4. 目标语言填写：en（English）、ja（日本語）、ko（한국어）</div>
+      </div>
+      <el-upload
+        ref="importUploadRef"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :auto-upload="false"
+        :on-change="handleImportFileChange"
+        :on-remove="handleImportFileRemove"
+        drag
+      >
+        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+        <div class="el-upload__text">将文件拖到此处，或<em>点击选择文件</em></div>
+      </el-upload>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button :loading="importDialog.loading" type="primary" @click="submitImport">确 定</el-button>
+          <el-button @click="importDialog.visible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="Glossary">
 import { listGlossary, getGlossary, delGlossary, addGlossary, updateGlossary } from "@/api/wms/glossary";
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import { ElMessage } from 'element-plus';
 
 const { proxy } = getCurrentInstance();
 
@@ -272,6 +315,129 @@ function refreshGlossaryCache() {
     console.log('[术语词典] 已自动刷新翻译词典缓存');
   }
 }
+
+/** 手动刷新缓存按钮 */
+function handleRefreshCache() {
+  refreshGlossaryCache();
+  proxy.$modal.msgSuccess('翻译词典缓存已刷新，下次翻译将使用最新词典');
+}
+
+// ==================== 文件数据导入 ====================
+const importDialog = reactive({ visible: false, loading: false });
+const importUploadRef = ref(null);
+const importFile = ref(null);
+
+const LANG_MAP = { 'english': 'en', 'en': 'en', '日本語': 'ja', 'ja': 'ja', '한국어': 'ko', 'ko': 'ko' };
+const VALID_LANGS = ['en', 'ja', 'ko'];
+
+const handleImportFileChange = (file) => { importFile.value = file.raw; };
+const handleImportFileRemove = () => { importFile.value = null; };
+
+/** 下载导入模板 */
+const downloadImportTemplate = () => {
+  const header = ['原文*', '译文*', '目标语言*'];
+  const examples = [
+    ['盘库', 'Stock-taking', 'en'],
+    ['盘库', '棚卸し', 'ja'],
+    ['出库', 'Outbound', 'en'],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet([header, ...examples]);
+  ws['!cols'] = [{ wch: 20 }, { wch: 25 }, { wch: 12 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '导入模板');
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `术语词典导入模板_${new Date().getTime()}.xlsx`);
+};
+
+/** 提交导入 */
+const submitImport = async () => {
+  if (!importFile.value) {
+    proxy?.$modal.msgWarning('请先选择 Excel 文件');
+    return;
+  }
+  importDialog.loading = true;
+  try {
+    const data = await importFile.value.arrayBuffer();
+    const wb = XLSX.read(data, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!rows.length) {
+      proxy?.$modal.msgWarning('Excel 文件为空');
+      importDialog.loading = false;
+      return;
+    }
+
+    const validItems = [];
+    const errors = [];
+
+    rows.forEach((row, idx) => {
+      const lineNum = idx + 2;
+      const sourceText = String(row['原文'] || row['原文*'] || '').trim();
+      const targetText = String(row['译文'] || row['译文*'] || '').trim();
+      const targetLangRaw = String(row['目标语言'] || row['目标语言*'] || '').trim().toLowerCase();
+
+      if (!sourceText) { errors.push(`第 ${lineNum} 行：原文为空`); return; }
+      if (!targetText) { errors.push(`第 ${lineNum} 行：译文为空`); return; }
+      if (!targetLangRaw) { errors.push(`第 ${lineNum} 行：目标语言为空`); return; }
+
+      const targetLang = LANG_MAP[targetLangRaw] || targetLangRaw;
+      if (!VALID_LANGS.includes(targetLang)) {
+        errors.push(`第 ${lineNum} 行：目标语言"${targetLangRaw}"无效（应为 en/ja/ko）`);
+        return;
+      }
+
+      validItems.push({ sourceText, targetText, targetLang });
+    });
+
+    if (errors.length) {
+      const errHtml = errors.slice(0, 10).map(e => `<div>${e}</div>`).join('');
+      const moreText = errors.length > 10 ? `<div>...等共 ${errors.length} 条</div>` : '';
+      ElMessage({
+        type: 'warning',
+        message: `<div style="line-height:1.6"><b>发现 ${errors.length} 条错误，已跳过：</b>${errHtml}${moreText}</div>`,
+        dangerouslyUseHTMLString: true,
+        duration: 6000,
+        showClose: true
+      });
+    }
+
+    if (!validItems.length) {
+      proxy?.$modal.msgWarning('没有有效数据可导入');
+      importDialog.loading = false;
+      return;
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    for (const item of validItems) {
+      try {
+        await addGlossary(item);
+        successCount++;
+      } catch (e) {
+        failCount++;
+        console.warn(`[术语导入] "${item.sourceText}"(${item.targetLang}) 导入失败:`, e);
+      }
+    }
+
+    if (failCount === 0) {
+      proxy?.$modal.msgSuccess(`导入成功！共导入 ${successCount} 条术语`);
+    } else {
+      proxy?.$modal.msgWarning(`导入完成：成功 ${successCount} 条，失败 ${failCount} 条`);
+    }
+
+    importDialog.visible = false;
+    importFile.value = null;
+    importUploadRef.value?.clearFiles();
+    getList();
+    refreshGlossaryCache(); // 导入后刷新翻译词典缓存
+  } catch (e) {
+    console.error('[术语导入] 导入失败:', e);
+    proxy?.$modal.msgError('导入失败：' + (e.message || e));
+  } finally {
+    importDialog.loading = false;
+  }
+};
 
 getList();
 </script>

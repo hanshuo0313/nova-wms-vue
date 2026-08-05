@@ -188,8 +188,6 @@
         <div>
           <el-button @click="doCheck" type="primary" class="ml10">完成盘库</el-button>
           <el-button @click="updateToInvalid" type="danger" v-if="form.id">作废</el-button>
-        </div>
-        <div>
           <el-button @click="save" type="primary">暂存</el-button>
           <el-button @click="cancel" class="mr10">取消</el-button>
         </div>
@@ -631,7 +629,7 @@ const getLocationList = (row) => {
   width: calc(100% - #{$base-sidebar-width});
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   float: right;
 }
 

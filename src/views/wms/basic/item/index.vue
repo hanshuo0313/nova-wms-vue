@@ -41,6 +41,7 @@
           <div>
             <el-button type="primary" plain icon="FolderOpened" @click="categoryDrawerVisible = true" class="mb10">商品分类</el-button>
             <el-button type="primary" plain icon="Plus" @click="handleAdd" class="mb10">新增商品</el-button>
+            <el-button type="primary" plain icon="Upload" @click="importDialog.visible = true" class="mb10">文件数据导入</el-button>
             <el-button type="primary" plain icon="Download" :disabled="selectedRows.length === 0" @click="handleDownloadProductCode" class="mb10">
               下载商品码{{ selectedRows.length > 0 ? `(${selectedRows.length})` : '' }}
             </el-button>
@@ -454,6 +455,35 @@
       <img :src="qrcode"/>
       <canvas ref="barcode"></canvas>
     </div>-->
+
+    <!-- 文件数据导入对话框 -->
+    <el-dialog title="文件数据导入" v-model="importDialog.visible" width="550px" append-to-body :close-on-click-modal="false">
+      <div style="margin-bottom: 12px; color: #606266; font-size: 13px;">
+        <div>1. 请先 <el-button link type="primary" @click="downloadImportTemplate">下载导入模板</el-button>，按模板格式填写数据</div>
+        <div>2. 仅支持 .xlsx / .xls 格式文件</div>
+        <div>3. 商品名称、商品编号、商品分类 为必填项</div>
+        <div>4. 同一商品多个规格请分多行填写（商品名称+商品编号相同会自动合并）</div>
+        <div>5. 供应商/商品分类/商品品牌/商品级别请填写对应名称，系统会自动匹配</div>
+      </div>
+      <el-upload
+        ref="importUploadRef"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :auto-upload="false"
+        :on-change="handleImportFileChange"
+        :on-remove="handleImportFileRemove"
+        drag
+      >
+        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+        <div class="el-upload__text">将文件拖到此处，或<em>点击选择文件</em></div>
+      </el-upload>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button :loading="importDialog.loading" type="primary" @click="submitImport">确 定</el-button>
+          <el-button @click="importDialog.visible = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -476,6 +506,7 @@ import {useWmsStore} from '@/store/modules/wms'
 import JSZip from 'jszip'
 import {saveAs} from 'file-saver'
 import * as XLSX from 'xlsx'
+import { ElMessage } from 'element-plus'
 import { listByIds } from '@/api/system/oss'
 
 const barcode = ref(null)
@@ -655,9 +686,9 @@ const data = reactive({
     itemCode: [
       {required: true, message: "编号不能为空", trigger: "blur"}
     ],
-    /*itemCategory: [
+    itemCategory: [
       {required: true, message: "分类不能为空", trigger: "blur"}
-    ],*/
+    ],
     warehouseId: [
       {required: true, message: "所属仓库不能为空", trigger: "blur"}
     ],
@@ -902,7 +933,7 @@ const submitForm = () => {
         }
         proxy?.$modal.msgSuccess("修改成功");
         dialog.visible = false;
-        await getList();
+        setTimeout(() => getList(), 300);
       }
     }
   });
@@ -1200,16 +1231,47 @@ const generateProductCodeBlob = ({ itemName, skuName, itemCode }) => {
       ctx.lineTo(W - PAD, titleBottom);
       ctx.stroke();
 
+      // 文本自动换行辅助函数
+      const wrapText = (text, maxWidth, font) => {
+        ctx.font = font;
+        const words = String(text || '').split(/(?<=[\s\-\)])|(?=[\s\-\(])/);
+        const lines = [];
+        let currentLine = '';
+        for (const word of words) {
+          const testLine = currentLine ? currentLine + word : word;
+          if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+            lines.push(currentLine.trim());
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine.trim()) lines.push(currentLine.trim());
+        return lines.length ? lines : [''];
+      };
+
       // 数据行
+      const VALUE_FONT = '18px Arial, sans-serif';
+      const LABEL_FONT = 'bold 18px Arial, sans-serif';
+      const valueMaxW = W - PAD * 2 - LABEL_W - 24; // 值区域最大宽度
+      const LINE_H = 26; // 行高
       const dataRows = [
         { label: 'Name', value: itemName },
         { label: 'Model', value: skuName },
         { label: 'Code', value: itemCode },
       ];
 
+      // 预先计算每行需要的行数和高度
+      const rowMeta = dataRows.map(row => {
+        const lines = wrapText(row.value, valueMaxW, VALUE_FONT);
+        const h = Math.max(ROW_H, lines.length * LINE_H + 20);
+        return { ...row, lines, rowH: h };
+      });
+
       let y = titleBottom;
-      dataRows.forEach((row) => {
-        y += ROW_H;
+      rowMeta.forEach((row) => {
+        const rowH = row.rowH;
+        y += rowH;
         ctx.beginPath();
         ctx.moveTo(PAD, y);
         ctx.lineTo(W - PAD, y);
@@ -1217,23 +1279,29 @@ const generateProductCodeBlob = ({ itemName, skuName, itemCode }) => {
 
         // 左侧标签背景
         ctx.fillStyle = '#f5f5f5';
-        ctx.fillRect(PAD + 1, y - ROW_H + 1, LABEL_W - 1, ROW_H - 1);
+        ctx.fillRect(PAD + 1, y - rowH + 1, LABEL_W - 1, rowH - 1);
 
         ctx.beginPath();
-        ctx.moveTo(PAD + LABEL_W, y - ROW_H);
+        ctx.moveTo(PAD + LABEL_W, y - rowH);
         ctx.lineTo(PAD + LABEL_W, y);
         ctx.stroke();
 
         ctx.fillStyle = '#333333';
-        ctx.font = 'bold 15px Arial, sans-serif';
+        ctx.font = LABEL_FONT;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(row.label, PAD + LABEL_W / 2, y - ROW_H / 2);
+        ctx.fillText(row.label, PAD + LABEL_W / 2, y - rowH / 2);
 
         ctx.fillStyle = '#000000';
-        ctx.font = '15px Arial, sans-serif';
+        ctx.font = VALUE_FONT;
         ctx.textAlign = 'left';
-        ctx.fillText(row.value || '', PAD + LABEL_W + 12, y - ROW_H / 2);
+        ctx.textBaseline = 'middle';
+        const textX = PAD + LABEL_W + 12;
+        const totalTextH = row.lines.length * LINE_H;
+        const startY = y - rowH / 2 - totalTextH / 2 + LINE_H / 2;
+        row.lines.forEach((line, i) => {
+          ctx.fillText(line, textX, startY + i * LINE_H);
+        });
       });
 
       // Barcode 行（填满剩余全部空间，条码图居中显示）
@@ -1255,7 +1323,7 @@ const generateProductCodeBlob = ({ itemName, skuName, itemCode }) => {
       ctx.stroke();
 
       ctx.fillStyle = '#333333';
-      ctx.font = 'bold 15px Arial, sans-serif';
+      ctx.font = LABEL_FONT;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('Barcode', PAD + LABEL_W / 2, barcodeStartY + barcodeRowH / 2);
@@ -1368,6 +1436,191 @@ const getVolumeText = (itemSku) => {
     + ((itemSku.width || itemSku.width === 0) ? (' 宽：' + itemSku.width) : '')
     + ((itemSku.height || itemSku.height === 0) ? (' 高：' + itemSku.height) : '')
 }
+
+// ==================== 文件数据导入 ====================
+const importDialog = reactive({ visible: false, loading: false })
+const importUploadRef = ref(null)
+const importFile = ref(null)
+
+const handleImportFileChange = (file) => {
+  importFile.value = file.raw
+}
+const handleImportFileRemove = () => {
+  importFile.value = null
+}
+
+/** 下载导入模板 */
+const downloadImportTemplate = () => {
+  const header = [
+    '商品名称*', '商品编号*', '供应商', '商品分类*', '商品品牌', '商品级别',
+    '规格名称', '规格编号', '成本价', '销售价', '净重(kg)', '毛重(kg)', '长(cm)', '宽(cm)', '高(cm)'
+  ]
+  const example = [
+    ['示例商品A', 'ITEM001', '', '', '', '', '大号', 'SKU001', '10.5', '20', '0.5', '0.6', '30', '20', '15'],
+    ['示例商品A', 'ITEM001', '', '', '', '', '小号', 'SKU002', '8', '15', '0.3', '0.4', '20', '15', '10'],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([header, ...example])
+  ws['!cols'] = header.map(() => ({ wch: 14 }))
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '导入模板')
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `商品导入模板_${new Date().getTime()}.xlsx`)
+}
+
+/** 提交导入 */
+const submitImport = async () => {
+  if (!importFile.value) {
+    proxy?.$modal.msgWarning('请先选择 Excel 文件')
+    return
+  }
+  importDialog.loading = true
+  try {
+    const data = await importFile.value.arrayBuffer()
+    const wb = XLSX.read(data, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+
+    if (!rows.length) {
+      proxy?.$modal.msgWarning('Excel 文件为空')
+      importDialog.loading = false
+      return
+    }
+
+    // 名称→ID 映射
+    const store = useWmsStore()
+    const merchantNameToId = {}
+    store.merchantList.forEach(m => { merchantNameToId[m.merchantName] = String(m.id) })
+    const categoryNameToId = {}
+    const flattenCategory = (list) => {
+      (list || []).forEach(n => {
+        if (n.categoryName) categoryNameToId[n.categoryName] = String(n.id)
+        if (n.label && n.label !== '全部') categoryNameToId[n.label] = String(n.id)
+        if (n.children) flattenCategory(n.children)
+      })
+    }
+    flattenCategory(store.itemCategoryTreeList)
+    const brandNameToId = {}
+    store.itemBrandList.forEach(b => { brandNameToId[b.brandName] = String(b.id) })
+    const levelLabelToValue = {}
+    product_level.value?.forEach(d => { levelLabelToValue[d.label] = d.value })
+
+    // 按 商品名称+商品编号 分组
+    const itemMap = {}
+    const errors = []
+    // 记录有名称不匹配问题的商品 key，用于跳过整个商品
+    const skipKeys = new Set()
+    rows.forEach((row, idx) => {
+      const itemName = String(row['商品名称'] || row['商品名称*'] || '').trim()
+      const itemCode = String(row['商品编号'] || row['商品编号*'] || '').trim()
+      if (!itemName) { errors.push(`第 ${idx + 2} 行：商品名称为空`); return }
+      if (!itemCode) { errors.push(`第 ${idx + 2} 行：商品编号为空`); return }
+
+      const rowLine = idx + 2 // Excel 行号
+
+      // 名称匹配校验：有值但匹配不上则报错并跳过该商品
+      const supplierName = String(row['供应商'] || '').trim()
+      const categoryName = String(row['商品分类'] || row['商品分类*'] || '').trim()
+      const brandName = String(row['商品品牌'] || '').trim()
+      const levelName = String(row['商品级别'] || '').trim()
+
+      if (supplierName && !merchantNameToId[supplierName]) {
+        errors.push(`第 ${rowLine} 行：供应商"${supplierName}"未找到匹配`)
+        skipKeys.add(itemName + '||' + itemCode)
+      }
+      if (categoryName && !categoryNameToId[categoryName]) {
+        errors.push(`第 ${rowLine} 行：商品分类"${categoryName}"未找到匹配`)
+        skipKeys.add(itemName + '||' + itemCode)
+      }
+      if (brandName && !brandNameToId[brandName]) {
+        errors.push(`第 ${rowLine} 行：商品品牌"${brandName}"未找到匹配`)
+        skipKeys.add(itemName + '||' + itemCode)
+      }
+      if (levelName && !levelLabelToValue[levelName]) {
+        errors.push(`第 ${rowLine} 行：商品级别"${levelName}"未找到匹配`)
+        skipKeys.add(itemName + '||' + itemCode)
+      }
+
+      const key = itemName + '||' + itemCode
+      if (!itemMap[key]) {
+        itemMap[key] = {
+          itemName, itemCode,
+          unit: merchantNameToId[supplierName] || '',
+          itemCategory: categoryNameToId[categoryName] || '',
+          itemBrand: brandNameToId[brandName] || '',
+          itemLevel: levelLabelToValue[levelName] || '',
+          sku: []
+        }
+      }
+
+      const skuName = String(row['规格名称'] || '').trim()
+      const skuCode = String(row['规格编号'] || '').trim()
+      if (skuName || skuCode) {
+        itemMap[key].sku.push({
+          skuName, skuCode, barcode: skuCode,
+          costPrice: row['成本价'] !== '' ? Number(row['成本价']) : null,
+          sellingPrice: row['销售价'] !== '' ? Number(row['销售价']) : null,
+          netWeight: row['净重(kg)'] !== '' ? Number(row['净重(kg)']) : null,
+          grossWeight: row['毛重(kg)'] !== '' ? Number(row['毛重(kg)']) : null,
+          length: row['长(cm)'] !== '' ? Number(row['长(cm)']) : null,
+          width: row['宽(cm)'] !== '' ? Number(row['宽(cm)']) : null,
+          height: row['高(cm)'] !== '' ? Number(row['高(cm)']) : null,
+        })
+      }
+    })
+
+    // 过滤掉有匹配问题的商品
+    const items = Object.entries(itemMap)
+      .filter(([key]) => !skipKeys.has(key))
+      .map(([, val]) => val)
+
+    if (errors.length) {
+      const errHtml = errors.slice(0, 10).map(e => `<div>${e}</div>`).join('')
+      const moreText = errors.length > 10 ? `<div>...等共 ${errors.length} 条</div>` : ''
+      ElMessage({
+        type: 'warning',
+        message: `<div style="line-height:1.6"><b>发现 ${errors.length} 条匹配错误，已跳过相关商品：</b>${errHtml}${moreText}</div>`,
+        dangerouslyUseHTMLString: true,
+        duration: 6000,
+        showClose: true
+      })
+    }
+
+    if (!items.length) {
+      proxy?.$modal.msgWarning('没有有效数据可导入（请检查供应商/商品分类/商品品牌/商品级别名称是否正确）')
+      importDialog.loading = false
+      return
+    }
+
+    let successCount = 0
+    let failCount = 0
+    for (const itemData of items) {
+      try {
+        await addItem(itemData)
+        successCount++
+      } catch (e) {
+        failCount++
+        console.warn(`[导入] 商品 "${itemData.itemName}" 导入失败:`, e)
+      }
+    }
+
+    if (failCount === 0) {
+      proxy?.$modal.msgSuccess(`导入成功！共导入 ${successCount} 个商品`)
+    } else {
+      proxy?.$modal.msgWarning(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+    }
+
+    importDialog.visible = false
+    importFile.value = null
+    importUploadRef.value?.clearFiles()
+    await getList()
+  } catch (e) {
+    console.error('[导入] 导入失败:', e)
+    proxy?.$modal.msgError('导入失败：' + (e.message || e))
+  } finally {
+    importDialog.loading = false
+  }
+}
+
 onMounted(() => {
   nextTick(()=>{
     getList();
