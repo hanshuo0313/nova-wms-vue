@@ -213,9 +213,9 @@ export default {
 
     // ---------- 增量翻译优化：去重、微批次、重试 ----------
     const pendingTranslations = new Map(); // text -> Promise<translation> 去重正在飞行的请求
-    const INCREMENTAL_BATCH_SIZE = 2; // 增量翻译每批条数（LibreTranslate 逐行处理，批次越大越慢）
+    const INCREMENTAL_BATCH_SIZE = 1; // 增量翻译每批条数（LibreTranslate 逐行处理，批次越小越稳定）
     const BATCH_DELAY_MS = 200; // 批次间隔(ms)，防止 CPU 打满
-    const INCREMENTAL_TIMEOUT = 20000; // 增量翻译批次超时(ms)
+    const INCREMENTAL_TIMEOUT = 60000; // 增量翻译批次超时(ms)
     const SINGLE_TIMEOUT = 25000; // 降级逐条翻译超时(ms)，比批次更长
     const MAX_RETRY = 2; // 最大重试次数
 
@@ -347,20 +347,22 @@ export default {
       const uniqueTexts = [...new Set(uncached.map(i => i.original))];
       const toRequest = uniqueTexts.filter(t => !pendingTranslations.has(t) && !(cacheEnabled && translationCache.has(t)));
 
-      // 3. 小批次并行请求（带重试）+ 同时等待已在飞行中的重复请求
+      // 3. 小批次顺序请求（带重试）+ 同时等待已在飞行中的重复请求
       const existingPending = uniqueTexts.filter(t => pendingTranslations.has(t));
       if (toRequest.length > 0) {
         const batches = [];
         for (let i = 0; i < toRequest.length; i += INCREMENTAL_BATCH_SIZE) {
           batches.push(toRequest.slice(i, i + INCREMENTAL_BATCH_SIZE));
         }
-        const batchPromises = batches.map(batch => requestBatchTranslation(batch));
-        // 同时等待新批次和已在飞行中的请求
-        const allPromises = [
-          ...batchPromises,
-          ...existingPending.map(t => pendingTranslations.get(t))
-        ];
-        await Promise.allSettled(allPromises);
+        // 顺序执行每个批次，避免并发压垂 API
+        for (const batch of batches) {
+          await requestBatchTranslation(batch);
+          if (BATCH_DELAY_MS > 0) await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+        }
+        // 等待已在飞行中的重复请求
+        if (existingPending.length > 0) {
+          await Promise.allSettled(existingPending.map(t => pendingTranslations.get(t)));
+        }
       } else if (existingPending.length > 0) {
         // 没有新请求，但有已在飞行中的重复请求
         await Promise.allSettled(existingPending.map(t => pendingTranslations.get(t)));
@@ -500,6 +502,7 @@ export default {
 
     // 表格单元格原文存储（用 Map 代替 data 属性，避免干扰 Vue DOM diffing）
     const _tableOriginalText = new Map();  // key: textNode, value: original text
+    const _tableTranslatedText = new Map(); // key: textNode, value: translated text
 
     /**
      * 应用翻译：表格单元格直接替换文本（不用 wrapper），非表格用 wrapper
@@ -511,6 +514,10 @@ export default {
       if (inTable) {
         // 表格单元格：直接替换文本内容，原文存在 Map 中（不修改 DOM 属性）
         textNode.textContent = translation;
+        // 仅翻译成功（译文≠原文）才记录，避免失败文本被误标记为已翻译而跳过重试
+        if (translation !== original) {
+          _tableTranslatedText.set(textNode, translation);
+        }
         // 如果文本节点被 Vue 复用（新页数据），更新 Map 中的原文
         if (_tableOriginalText.has(textNode)) {
           const storedOriginal = _tableOriginalText.get(textNode);
@@ -690,6 +697,21 @@ export default {
     }
 
     // 批量翻译（合并长文本减少请求，支持 AbortController 取消 + 重试 + 降级）
+    // 兜底：对 API 未翻译的混合文本，提取中文片段逐段翻译后回填
+    // 例如 "条形码读取器-SR-5000X" 整体翻译失败时，单独翻译"条形码读取器"再拼接
+    async function translateChineseSegments(text) {
+      const runs = [...new Set(text.match(/[一-鿿]+/g) || [])];
+      if (runs.length === 0) return null;
+      // 并行翻译各中文片段
+      const transList = await Promise.all(runs.map(run => translateSingle(run).catch(() => run)));
+      let result = text;
+      runs.forEach((run, idx) => {
+        const t = transList[idx];
+        if (t && t !== run) result = result.split(run).join(t);
+      });
+      return result !== text ? result : null;
+    }
+
     async function batchTranslate(texts) {
       const results = [];
       const toTranslate = [];
@@ -719,9 +741,9 @@ export default {
 
       if (toTranslate.length > 0) {
         const controller = ensureAbortController();
-        // 分批翻译，使用小批次（LibreTranslate 逐行处理，批次越大越慢）
-        // LibreTranslate 逐行处理批量，批次越大越慢，故使用小批次 + 顺序处理
-        const batchSize = 3;
+        // 分批翻译：批次过大会使单批超过超时（CPU 推理慢），过小则 HTTP 往返多。
+        // 基准：10 条/批约 9s，安全低于超时；兼顾往返次数与单批耗时
+        const batchSize = 10;
         const batches = [];
         for (let i = 0; i < toTranslate.length; i += batchSize) {
           batches.push(toTranslate.slice(i, i + batchSize));
@@ -732,8 +754,8 @@ export default {
         // 翻译单个批次（带重试 + 超时递增）
         const translateBatchWithRetry = async (batch, batchIndex, retryCount = 0) => {
           const combined = batch.map(item => item.text).join('\n');
-          // 每次重试增加 10s 超时（30s → 40s → 50s）
-          const batchTimeout = 30000 + retryCount * 10000;
+          // 超时设得足够宽裕，避免 CPU 推理慢时误超时触发重试（重试会浪费一倍时间）
+          const batchTimeout = 90000 + retryCount * 30000;
           try {
             const response = await translateAxios.post(apiEndpoint, {
               q: combined,
@@ -800,13 +822,41 @@ export default {
         let successCount = 0;
         batchResults.flat().forEach(result => {
           if (result && result.index !== undefined) {
-            results[result.index] = result.translation;
-            if (cacheEnabled && result.translation !== result.text) {
-              translationCache.set(result.text, result.translation);
+            let trans = result.translation;
+            // 用术语词典清理残留中文术语（无论 API 是否翻译成功，如"模块/断路器"）
+            const cleaned = applyGlossarySubstring(trans);
+            if (cleaned) trans = cleaned;
+            results[result.index] = trans;
+            if (cacheEnabled && trans !== result.text) {
+              translationCache.set(result.text, trans);
               successCount++;
             }
           }
         });
+
+        // 兜底：译文仍含中文（整条未译或部分翻译，如"SIEMENS模块"），提取中文片段单独翻译回填
+        // 仅对非日语生效（日语译文本身允许含汉字）；扫描全部结果（含缓存/词典路径）
+        // 并行 + 限量 + 容错，避免阻塞主翻译流程（防止 _tableTranslating 卡死）
+        if (currentTargetLang !== 'ja') {
+          const toFix = [];
+          for (let i = 0; i < results.length; i++) {
+            if (results[i] && /[一-鿿]/.test(results[i])) toFix.push(i);
+          }
+          if (toFix.length > 0) {
+            try {
+              await Promise.all(toFix.slice(0, 20).map(async (i) => {
+                const fixed = await translateChineseSegments(results[i]);
+                if (fixed) {
+                  results[i] = fixed;
+                  if (cacheEnabled) translationCache.set(texts[i], fixed);
+                  successCount++;
+                }
+              }));
+            } catch (e) {
+              console.warn('[翻译插件] 中文片段兜底翻译异常:', e.message);
+            }
+          }
+        }
 
         // 异步保存到 localStorage
         if (cacheEnabled && successCount > 0) {
@@ -893,6 +943,7 @@ export default {
         }
       });
       _tableOriginalText.clear();
+      _tableTranslatedText.clear();
       _tableFingerprint = '';  // 重置指纹，下次翻译重新扫描
       // 3. 清理动态调整的 col 宽度（恢复原始布局）
       document.querySelectorAll('col[style*="width"]').forEach(col => {
@@ -914,61 +965,323 @@ export default {
       // 方案：专用 Observer + 分页点击监听，与全局 Observer 完全解耦
 
       let _tableDebounce = null;
+      let _tablePhase2Timer = null;   // 第二阶段定时器（独立于 debounce）
       let _tableTranslating = false;  // 防止并发翻译
       let _tableApplying = false;     // 标记正在应用翻译（忽略自身触发的 Mutation）
 
       async function translateNewTableNodes() {
-        if (_tableTranslating) return;  // 上一次翻译未完成，跳过
+        if (_tableTranslating) {  // 上一次翻译未完成，跳过
+          console.log('[翻译插件] translateNewTableNodes: 翻译进行中，跳过');
+          return;
+        }
         _tableTranslating = true;
         try {
           // 等待 Vue DOM 更新完成
           await new Promise(r => setTimeout(r, 100));
 
-          // 收集所有未翻译的文本节点
-          const items = [];
+          // 收集所有未翻译的表格文本节点（跳过已翻译的）
+          const allTextNodes = [];
+          const allOriginals = [];
+          let totalNodes = 0;
           document.querySelectorAll('.el-table__body').forEach(tableBody => {
             getTextNodes(tableBody).forEach(tn => {
-              const original = tn.textContent;
-              if (original && original.trim() && !isNonTranslatable(original)) {
-                items.push({ textNode: tn, original });
-              }
+              const text = tn.textContent;
+              if (!text || !text.trim() || isNonTranslatable(text)) return;
+              totalNodes++;
+              // 跳过已翻译的节点：通过 _tableTranslatedText 判断
+              // 如果当前DOM文本等于存储的译文，说明已翻译完成
+              if (_tableTranslatedText.has(tn) && _tableTranslatedText.get(tn) === text) return;
+              allTextNodes.push(tn);
+              allOriginals.push(text);
             });
           });
 
-          console.log(`[翻译插件] translateNewTableNodes: 找到 ${items.length} 个未翻译节点`);
+          console.log(`[翻译插件] translateNewTableNodes: 总节点=${totalNodes}, 待翻译=${allTextNodes.length}`);
+          if (allTextNodes.length === 0) return;
 
-          // 指纹检查
-          const fingerprint = items.map(i => i.original).join('\x00');
+          // 指纹检查（避免重复翻译相同内容）
+          const fingerprint = allOriginals.join('\x00');
           if (fingerprint === _tableFingerprint) {
             return;
           }
           _tableFingerprint = fingerprint;
 
-          // 翻译期间暂停 Observer，避免修改文本触发的 Mutation 导致递归调用
+          // 直接调用 batchTranslate（内部自动处理缓存 + API 翻译，与初始翻译相同逻辑）
+          const uniqueTexts = [...new Set(allOriginals)];
+          const translations = await batchTranslate(uniqueTexts);
+
+          const transMap = new Map();
+          uniqueTexts.forEach((text, i) => {
+            transMap.set(text, translations[i]);
+          });
+
+          // 应用翻译结果
           _tableApplying = true;
-          if (items.length > 0) {
-            // 翻页场景只用缓存，不调用 API，避免超时卡死页面
-            await translateIncrementalBatch(items, true);
+          try {
+            let applied = 0;
+            allTextNodes.forEach((node, i) => {
+              const orig = allOriginals[i];
+              const trans = transMap.get(orig);
+              if (trans && trans !== orig) {
+                applyTranslation(node, orig, trans);
+                _tableTranslatedText.set(node, trans);
+                applied++;
+              }
+            });
+            console.log(`[翻译插件] 表格翻译完成: 节点=${allTextNodes.length}, 应用=${applied}`);
+          } finally {
+            _tableApplying = false;
           }
         } finally {
-          _tableApplying = false;
           _tableTranslating = false;
         }
       }
 
       function scheduleTableRetranslate() {
         clearTimeout(_tableDebounce);
-        // 等待 1.5s，确保翻页 API 数据加载完成后再翻译
+        clearTimeout(_tablePhase2Timer);
+        clearTimeout(_bgTranslationTimer);
         _tableDebounce = setTimeout(async () => {
+          // 等待正在进行的翻译（如后台翻译）完成，避免 translateNewTableNodes 被静默跳过（最多等 5s）
+          const waitStart = Date.now();
+          while (_tableTranslating && Date.now() - waitStart < 5000) {
+            await new Promise(r => setTimeout(r, 200));
+          }
+          // 第一阶段：仅缓存，瞬间完成表格已缓存内容
           await translateNewTableNodes();
+          // 第二阶段：3秒后补译非表格内容（表单/弹窗等，避免重复处理表格）
+          clearTimeout(_nonTableTimer);
+          _nonTableTimer = setTimeout(() => translateNonTableContent(), 3000);
         }, 1500);
+      }
+
+      let _nonTableTimer = null;
+      let _dialogTimer = null;  // 弹窗打开后的二次补译计时器
+      // 补译非表格区域的未翻译内容（表单/弹窗等）
+      async function translateNonTableContent() {
+        if (!isTranslated) {
+          console.log('[翻译插件] 非表格补译: 未开启翻译，跳过');
+          return;
+        }
+
+        // 收集非表格区域的文本节点
+        const textNodes = [];
+        const originals = [];
+        getTextNodes(document.body).forEach(tn => {
+          if (tn.parentElement?.closest('.el-table__body')) return; // 跳过表格
+          textNodes.push(tn);
+          originals.push(tn.textContent);
+        });
+
+        const uniqueTexts = [...new Set(originals)];
+        // 基于"是否含中文"检测未翻译内容（弹窗新节点即使已缓存也要应用译文）
+        // 英文/韩语：含中文即未翻译；日语：含中文且无假名才未翻译
+        const CHINESE_RE = /[一-鿿]/;
+        const KANA_RE = /[぀-ヿ]/;
+        const toTranslate = uniqueTexts.filter(t => {
+          if (!t || !t.trim() || isNonTranslatable(t)) return false;
+          if (!CHINESE_RE.test(t)) return false; // 不含中文=已翻译/非中文，跳过
+          if (currentTargetLang === 'ja') return !KANA_RE.test(t);
+          return true;
+        });
+
+        console.log(`[翻译插件] 非表格补译: 总节点=${textNodes.length}, 唯一文本=${uniqueTexts.length}, 待翻译=${toTranslate.length}`);
+        if (toTranslate.length === 0) return;
+
+        const translations = await batchTranslate(toTranslate);
+        const transMap = new Map();
+        toTranslate.forEach((text, i) => transMap.set(text, translations[i]));
+
+        // 应用翻译
+        let applied = 0;
+        textNodes.forEach((node, i) => {
+          const orig = originals[i];
+          const trans = transMap.get(orig);
+          if (trans && trans !== orig) {
+            wrapWithTranslation(node, orig, trans);
+            applied++;
+          }
+        });
+        console.log(`[翻译插件] 非表格补译完成: 待翻译=${toTranslate.length}, 应用=${applied}`);
+      }
+
+      // 仅翻译表格区域（避免 translatePage 扫描整个 body 导致弹窗卡顿）
+      async function translateTableOnly() {
+        const tableBodies = document.querySelectorAll('.el-table__body');
+        if (tableBodies.length === 0) return;
+
+        const allTextNodes = [];
+        const allOriginals = [];
+        tableBodies.forEach(tableBody => {
+          getTextNodes(tableBody).forEach(tn => {
+            allTextNodes.push(tn);
+            allOriginals.push(tn.textContent);
+          });
+        });
+
+        const uniqueTexts = [...new Set(allOriginals)];
+        const translations = await batchTranslate(uniqueTexts);
+
+        const transMap = new Map();
+        uniqueTexts.forEach((text, i) => {
+          transMap.set(text, translations[i]);
+        });
+
+        _tableApplying = true;
+        try {
+          allTextNodes.forEach((node, i) => {
+            const orig = allOriginals[i];
+            const trans = transMap.get(orig);
+            if (trans && trans !== orig) {
+              applyTranslation(node, orig, trans);
+            }
+          });
+        } finally {
+          _tableApplying = false;
+        }
+        console.log(`[翻译插件] 表格补译完成，共 ${uniqueTexts.length} 个唯一文本`);
+      }
+
+      // 检测文本是否包含中文字符（用于英文/韩语翻译场景）
+      const CHINESE_RE = /[\u4e00-\u9fff]/;
+      // 检测文本是否包含日语假名（用于日语翻译场景）
+      const JAPANESE_KANA_RE = /[\u3040-\u309F\u30A0-\u30FF]/;  // 平假名 + 片假名
+
+      // 后台分批翻译：根据目标语言选择判断策略
+      let _bgTranslationTimer = null;
+      function scheduleBackgroundTranslation() {
+        clearTimeout(_bgTranslationTimer);
+        const BATCH_SIZE = 10;
+        const INTERVAL = 3000;
+        const MAX_FAILURES = 3;
+        let consecutiveFailures = 0;
+        const processed = new Set();
+        // 根据目标语言选择判断策略
+        // 英文/韩语：翻译结果不含中文 → 中文字符检测
+        // 日语：翻译结果含平假名/片假名 → 日语假名检测
+        const strategy = currentTargetLang === 'ja' ? 'kana'
+          : (currentTargetLang === 'en' || currentTargetLang === 'ko') ? 'chinese'
+          : 'map';
+
+        const strategyLabel = { chinese: '中文字符检测', kana: '日语假名检测', map: 'Map状态判断' };
+        console.log(`[翻译插件] 后台翻译已启动 (${strategyLabel[strategy]})`);
+
+        async function processBatch() {
+          if (!isTranslated || _tableTranslating) return;
+
+          const uncachedItems = [];
+          document.querySelectorAll('.el-table__body').forEach(tableBody => {
+            getTextNodes(tableBody).forEach(tn => {
+              if (processed.has(tn)) return;
+              const text = tn.textContent;
+              if (!text || !text.trim()) return;
+              if (isNonTranslatable(text)) return;
+              if (translationCache.has(text)) return;
+              if (glossaryMap.has(text.trim())) return;
+
+              if (strategy === 'chinese') {
+                // 英文/韩语：不含中文 = 已翻译
+                if (!CHINESE_RE.test(text)) return;
+              } else if (strategy === 'kana') {
+                // 日语：含平假名/片假名 = 已翻译为日语
+                if (JAPANESE_KANA_RE.test(text)) return;
+                // 中文与日语差异对比：不含中文 = 非中文内容，跳过
+                if (!CHINESE_RE.test(text)) return;
+              } else {
+                // 其他语言：通过 Map 检查
+                if (_tableOriginalText.has(tn)) {
+                  const storedOriginal = _tableOriginalText.get(tn);
+                  if (text !== storedOriginal) return;
+                }
+              }
+
+              uncachedItems.push({ textNode: tn, original: text });
+            });
+          });
+
+          console.log(`[翻译插件] 后台翻译: 未翻译节点=${uncachedItems.length}`);
+          if (uncachedItems.length === 0) return;
+
+          const batch = uncachedItems.slice(0, BATCH_SIZE);
+          const texts = batch.map(item => item.original);
+
+          _tableTranslating = true;
+          _tableApplying = true;
+          let successCount = 0;
+          try {
+            const prevCacheSize = translationCache.size;
+            const translations = await batchTranslate(texts);
+            successCount = translationCache.size - prevCacheSize;
+
+            // 应用翻译结果到表格单元格
+            batch.forEach((item, idx) => {
+              const trans = translations[idx];
+              if (trans && trans !== item.original) {
+                item.textNode.textContent = trans;
+                if (!_tableOriginalText.has(item.textNode)) {
+                  _tableOriginalText.set(item.textNode, item.original);
+                }
+              }
+              // 只要翻译结果与原文不同（或已缓存），就标记为已处理
+              if (translationCache.has(item.original) || glossaryMap.has(item.original.trim())) {
+                processed.add(item.textNode);
+              }
+            });
+          } catch (e) {
+            console.warn(`[翻译插件] 后台翻译失败:`, e.message);
+            // 失败时不标记为已处理，允许下次重试
+          } finally {
+            _tableApplying = false;
+            _tableTranslating = false;
+          }
+
+          if (successCount === 0) {
+            consecutiveFailures++;
+            console.log(`[翻译插件] 后台翻译: 本批成功=0, 连续失败=${consecutiveFailures}/${MAX_FAILURES}`);
+            if (consecutiveFailures >= MAX_FAILURES) {
+              console.log('[翻译插件] 后台翻译: 连续失败过多，停止');
+              return;
+            }
+          } else {
+            consecutiveFailures = 0;
+            console.log(`[翻译插件] 后台翻译: 本批成功 ${successCount} 条`);
+          }
+
+          if (uncachedItems.length > BATCH_SIZE) {
+            _bgTranslationTimer = setTimeout(processBatch, INTERVAL);
+          }
+        }
+
+        processBatch();
       }
 
       // 分页点击监听
       document.addEventListener('click', (e) => {
         if (!isTranslated) return;
         if (e.target.closest('.el-pagination')) {
+          clearTimeout(_bgTranslationTimer);  // 取消后台翻译
           scheduleTableRetranslate();
+        }
+      }, true);
+
+      // 输入框数据值悬停翻译（仅展示不提交）：
+      // 直接改写 input.value 有数据污染/Vue 重渲染还原风险，故采用悬停显示译文（title 提示），值本身永不改动
+      document.addEventListener('mouseover', (e) => {
+        if (!isTranslated) return;
+        const t = e.target;
+        if (!(t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+        if (t.dataset.itHoverBound) return;  // 已绑定过，跳过
+        const v = t.value;
+        if (!v || !/[一-鿿]/.test(v)) return;  // 仅处理含中文的值
+        t.dataset.itHoverBound = '1';
+        // 优先用缓存，避免重复请求；异步翻译后写入 title
+        if (cacheEnabled && translationCache.has(v)) {
+          const cached = translationCache.get(v);
+          if (cached && cached !== v) t.title = cached;
+        } else {
+          translateSingle(v).then(trans => {
+            if (trans && trans !== v) t.title = trans;
+          }).catch(() => {});
         }
       }, true);
 
@@ -1018,10 +1331,17 @@ export default {
         if (!isTranslated) return;
 
         const nodesToTranslate = [];
+        let dialogOpened = false;
 
         mutations.forEach(mutation => {
           if (mutation.type === 'childList') {
             mutation.addedNodes.forEach(node => {
+              // 检测弹窗/抽屉打开，弹窗内容需要更及时的翻译
+              if (node.nodeType === Node.ELEMENT_NODE &&
+                (node.matches?.('.el-dialog, .el-drawer, .el-overlay, .el-message-box') ||
+                 node.closest?.('.el-dialog, .el-drawer, .el-overlay, .el-message-box'))) {
+                dialogOpened = true;
+              }
               if (node.nodeType === Node.ELEMENT_NODE &&
                 !node.classList?.contains('translated-node') &&
                 !node.closest?.('#__immersive_translate_btn') &&
@@ -1070,8 +1390,16 @@ export default {
             });
 
             if (allTextItems.length > 0) {
-              // 增量翻译只用缓存，不调 API，避免与初始翻译竞争资源
+              // 增量翻译先用缓存，快速显示已缓存内容
               await translateIncrementalBatch(allTextItems, true);
+              // 弹窗内容提前补译（600ms），普通内容保持 3s；弹窗再追加一次 2s 补译覆盖异步加载
+              const delay = dialogOpened ? 600 : 3000;
+              clearTimeout(_nonTableTimer);
+              _nonTableTimer = setTimeout(() => translateNonTableContent(), delay);
+              if (dialogOpened) {
+                clearTimeout(_dialogTimer);
+                _dialogTimer = setTimeout(() => translateNonTableContent(), 2000);
+              }
             }
           }, 150);
         }

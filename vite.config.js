@@ -35,7 +35,7 @@ export default defineConfig(({ mode, command }) => {
           rewrite: (p) => p.replace(/^\/dev-api/, '')
         },
         '/translate-api': {
-          target: 'http://localhost:5000',
+          target: 'http://127.0.0.1:5000',
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/translate-api/, '/translate')
         }

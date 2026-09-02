@@ -880,6 +880,13 @@ const handleUpdate = (row) => {
     reset();
     const _id = row?.itemId || ids.value[0]
     const res = await listItemSku({'itemId':_id});
+    // 将数值字段从字符串转为 Number（避免 ElInputNumber 类型警告）
+    const numFields = ['length', 'width', 'height', 'netWeight', 'grossWeight', 'costPrice', 'sellingPrice'];
+    res.data.forEach(item => {
+      numFields.forEach(f => {
+        if (item[f] != null && item[f] !== '') item[f] = Number(item[f]);
+      });
+    });
     Object.assign(skuForm.itemSkuList, res.data)
     skuLoading.value = false
     Object.assign(form.value, row.item);
@@ -1504,43 +1511,49 @@ const submitImport = async () => {
     const levelLabelToValue = {}
     product_level.value?.forEach(d => { levelLabelToValue[d.label] = d.value })
 
-    // 按 商品名称+商品编号 分组
-    const itemMap = {}
+    // ========== 第一遍：先校验商品信息匹配问题 ==========
+    // 匹配失败的商品记入 skipKeys，后续完全不构建、不提交（wms_item 与 wms_item_sku 均不插入）
     const errors = []
-    // 记录有名称不匹配问题的商品 key，用于跳过整个商品
     const skipKeys = new Set()
-    rows.forEach((row, idx) => {
+    const getRowNames = (row) => {
       const itemName = String(row['商品名称'] || row['商品名称*'] || '').trim()
       const itemCode = String(row['商品编号'] || row['商品编号*'] || '').trim()
-      if (!itemName) { errors.push(`第 ${idx + 2} 行：商品名称为空`); return }
-      if (!itemCode) { errors.push(`第 ${idx + 2} 行：商品编号为空`); return }
-
-      const rowLine = idx + 2 // Excel 行号
-
-      // 名称匹配校验：有值但匹配不上则报错并跳过该商品
       const supplierName = String(row['供应商'] || '').trim()
       const categoryName = String(row['商品分类'] || row['商品分类*'] || '').trim()
       const brandName = String(row['商品品牌'] || '').trim()
       const levelName = String(row['商品级别'] || '').trim()
-
-      if (supplierName && !merchantNameToId[supplierName]) {
-        errors.push(`第 ${rowLine} 行：供应商"${supplierName}"未找到匹配`)
-        skipKeys.add(itemName + '||' + itemCode)
-      }
-      if (categoryName && !categoryNameToId[categoryName]) {
-        errors.push(`第 ${rowLine} 行：商品分类"${categoryName}"未找到匹配`)
-        skipKeys.add(itemName + '||' + itemCode)
-      }
-      if (brandName && !brandNameToId[brandName]) {
-        errors.push(`第 ${rowLine} 行：商品品牌"${brandName}"未找到匹配`)
-        skipKeys.add(itemName + '||' + itemCode)
-      }
-      if (levelName && !levelLabelToValue[levelName]) {
-        errors.push(`第 ${rowLine} 行：商品级别"${levelName}"未找到匹配`)
-        skipKeys.add(itemName + '||' + itemCode)
-      }
+      return { itemName, itemCode, supplierName, categoryName, brandName, levelName }
+    }
+    rows.forEach((row, idx) => {
+      const rowLine = idx + 2 // Excel 行号
+      const { itemName, itemCode, supplierName, categoryName, brandName, levelName } = getRowNames(row)
+      if (!itemName) { errors.push(`第 ${rowLine} 行：商品名称为空`); return }
+      if (!itemCode) { errors.push(`第 ${rowLine} 行：商品编号为空`); return }
 
       const key = itemName + '||' + itemCode
+      // 名称匹配校验：有值但匹配不上则报错并标记跳过整个商品
+      if (supplierName && !merchantNameToId[supplierName]) {
+        errors.push(`第 ${rowLine} 行：供应商"${supplierName}"未找到匹配`); skipKeys.add(key)
+      }
+      if (categoryName && !categoryNameToId[categoryName]) {
+        errors.push(`第 ${rowLine} 行：商品分类"${categoryName}"未找到匹配`); skipKeys.add(key)
+      }
+      if (brandName && !brandNameToId[brandName]) {
+        errors.push(`第 ${rowLine} 行：商品品牌"${brandName}"未找到匹配`); skipKeys.add(key)
+      }
+      if (levelName && !levelLabelToValue[levelName]) {
+        errors.push(`第 ${rowLine} 行：商品级别"${levelName}"未找到匹配`); skipKeys.add(key)
+      }
+    })
+
+    // ========== 第二遍：仅为通过校验的商品构建数据（按 商品名称+商品编号 分组）==========
+    const itemMap = {}
+    rows.forEach((row) => {
+      const { itemName, itemCode, supplierName, categoryName, brandName, levelName } = getRowNames(row)
+      if (!itemName || !itemCode) return
+      const key = itemName + '||' + itemCode
+      if (skipKeys.has(key)) return // 匹配失败：不构建该商品，wms_item 与 wms_item_sku 均不插入
+
       if (!itemMap[key]) {
         itemMap[key] = {
           itemName, itemCode,
@@ -1554,24 +1567,22 @@ const submitImport = async () => {
 
       const skuName = String(row['规格名称'] || '').trim()
       const skuCode = String(row['规格编号'] || '').trim()
-      if (skuName || skuCode) {
-        itemMap[key].sku.push({
-          skuName, skuCode, barcode: skuCode,
-          costPrice: row['成本价'] !== '' ? Number(row['成本价']) : null,
-          sellingPrice: row['销售价'] !== '' ? Number(row['销售价']) : null,
-          netWeight: row['净重(kg)'] !== '' ? Number(row['净重(kg)']) : null,
-          grossWeight: row['毛重(kg)'] !== '' ? Number(row['毛重(kg)']) : null,
-          length: row['长(cm)'] !== '' ? Number(row['长(cm)']) : null,
-          width: row['宽(cm)'] !== '' ? Number(row['宽(cm)']) : null,
-          height: row['高(cm)'] !== '' ? Number(row['高(cm)']) : null,
-        })
-      }
+      // 即使规格名称/编号等信息为空，也插入 SKU 数据，
+      // 避免 wms_item 表有数据而 wms_item_sku 表无数据的问题
+      itemMap[key].sku.push({
+        skuName, skuCode, barcode: skuCode,
+        costPrice: row['成本价'] !== '' ? Number(row['成本价']) : null,
+        sellingPrice: row['销售价'] !== '' ? Number(row['销售价']) : null,
+        netWeight: row['净重(kg)'] !== '' ? Number(row['净重(kg)']) : null,
+        grossWeight: row['毛重(kg)'] !== '' ? Number(row['毛重(kg)']) : null,
+        length: row['长(cm)'] !== '' ? Number(row['长(cm)']) : null,
+        width: row['宽(cm)'] !== '' ? Number(row['宽(cm)']) : null,
+        height: row['高(cm)'] !== '' ? Number(row['高(cm)']) : null,
+      })
     })
 
-    // 过滤掉有匹配问题的商品
-    const items = Object.entries(itemMap)
-      .filter(([key]) => !skipKeys.has(key))
-      .map(([, val]) => val)
+    // itemMap 中的商品均已通过匹配校验
+    const items = Object.values(itemMap)
 
     if (errors.length) {
       const errHtml = errors.slice(0, 10).map(e => `<div>${e}</div>`).join('')
