@@ -8,6 +8,16 @@
         <el-form-item label="商品名称" prop="itemName">
           <el-input v-model="queryParams.itemName" placeholder="请输入商品名称" clearable @keyup.enter="handleQuery"/>
         </el-form-item>
+        <el-form-item label="所属仓库" prop="warehouseId">
+          <el-select v-model="queryParams.warehouseId" clearable filterable placeholder="请选择仓库">
+            <el-option
+              v-for="item in useWmsStore().warehouseList"
+              :key="item.id"
+              :label="item.warehouseName"
+              :value="item.id"
+            ></el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="商品品牌" prop="itemBrand">
           <el-select v-model="queryParams.itemBrand" clearable filterable>
             <el-option
@@ -77,6 +87,11 @@
           <el-table-column label="商品编号" prop="itemId" align="center" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.item.itemCode }}
+            </template>
+          </el-table-column>
+          <el-table-column label="所属仓库" prop="itemId" align="center" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.item.warehouseId ? useWmsStore().warehouseMap.get(String(row.item.warehouseId))?.warehouseName : '' }}
             </template>
           </el-table-column>
           <el-table-column label="供应商" prop="itemId" align="center" min-width="120" show-overflow-tooltip>
@@ -267,6 +282,20 @@
                       :label="dict.label"
                       :value="dict.value"
                     />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="24">
+              <el-col :span="12">
+                <el-form-item label="所属仓库" prop="warehouseId">
+                  <el-select v-model="form.warehouseId" clearable filterable placeholder="请选择仓库" style="width: 100%!important;">
+                    <el-option
+                      v-for="item in useWmsStore().warehouseList"
+                      :key="item.id"
+                      :label="item.warehouseName"
+                      :value="item.id"
+                    ></el-option>
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -488,7 +517,7 @@
 </template>
 
 <script setup name="Item">
-import {getItem, delItem, addItem, updateItem} from '@/api/wms/item';
+import {getItem, delItem, addItem, updateItem, listItem} from '@/api/wms/item';
 import {computed, getCurrentInstance, nextTick, onMounted, reactive, ref, toRefs} from 'vue';
 import {ElForm, ElTree, ElTreeSelect} from 'element-plus';
 import {
@@ -656,6 +685,7 @@ const initFormData = {
   itemBrand: undefined,
   itemImage: undefined,
   itemLevel: undefined,
+  warehouseId: undefined,
   remark: undefined,
 }
 const initCategoryFormData = {
@@ -674,6 +704,7 @@ const data = reactive({
     itemCode: undefined,
     itemName: undefined,
     itemType: undefined,
+    warehouseId: undefined,
     unit: undefined
   },
   rules: {
@@ -933,14 +964,22 @@ const submitForm = () => {
       })
       if (flag) {
         buttonLoading.value = true;
-        if (form.value.id) {
-          await updateItem(form.value).finally(() => buttonLoading.value = false);
-        } else {
-          await addItem(form.value).finally(() => buttonLoading.value = false);
+        try {
+          if (form.value.id) {
+            await updateItem(form.value);
+            proxy?.$modal.msgSuccess("修改成功");
+          } else {
+            await addItem(form.value);
+            proxy?.$modal.msgSuccess("新增成功");
+          }
+          dialog.visible = false;
+          setTimeout(() => getList(), 300);
+        } catch (e) {
+          // 校验失败（如商品编号已存在）由请求拦截器给出提示，保留弹窗便于修改
+          console.warn('[商品保存] 失败:', e);
+        } finally {
+          buttonLoading.value = false;
         }
-        proxy?.$modal.msgSuccess("修改成功");
-        dialog.visible = false;
-        setTimeout(() => getList(), 300);
       }
     }
   });
@@ -990,6 +1029,7 @@ const handleExport = async () => {
     const exportData = rows.map(row => ({
       '商品名称': row.item?.itemName || '',
       '商品编号': row.item?.itemCode || '',
+      '所属仓库': row.item?.warehouseId ? (store.warehouseMap.get(String(row.item.warehouseId))?.warehouseName || '') : '',
       '供应商': row.item?.unit ? (store.merchantMap.get(String(row.item.unit))?.merchantName || '') : '',
       '商品分类': row.item?.itemCategory ? (store.itemCategoryMap.get(String(row.item.itemCategory))?.categoryName || '') : '',
       '商品品牌': row.item?.itemBrand ? (store.itemBrandMap.get(String(row.item.itemBrand))?.brandName || '') : '',
@@ -1007,7 +1047,7 @@ const handleExport = async () => {
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     ws['!cols'] = [
-      { wch: 20 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 10 },
+      { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 10 },
       { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
       { wch: 10 }, { wch: 10 }, { wch: 10 }
     ];
@@ -1459,12 +1499,12 @@ const handleImportFileRemove = () => {
 /** 下载导入模板 */
 const downloadImportTemplate = () => {
   const header = [
-    '商品名称*', '商品编号*', '供应商', '商品分类*', '商品品牌', '商品级别',
+    '商品名称*', '商品编号*', '所属仓库*', '供应商', '商品分类*', '商品品牌', '商品级别',
     '规格名称', '规格编号', '成本价', '销售价', '净重(kg)', '毛重(kg)', '长(cm)', '宽(cm)', '高(cm)'
   ]
   const example = [
-    ['示例商品A', 'ITEM001', '', '', '', '', '大号', 'SKU001', '10.5', '20', '0.5', '0.6', '30', '20', '15'],
-    ['示例商品A', 'ITEM001', '', '', '', '', '小号', 'SKU002', '8', '15', '0.3', '0.4', '20', '15', '10'],
+    ['示例商品A', 'ITEM001', '一号仓', '', '', '', '', '大号', 'SKU001', '10.5', '20', '0.5', '0.6', '30', '20', '15'],
+    ['示例商品A', 'ITEM001', '一号仓', '', '', '', '', '小号', 'SKU002', '8', '15', '0.3', '0.4', '20', '15', '10'],
   ]
   const ws = XLSX.utils.aoa_to_sheet([header, ...example])
   ws['!cols'] = header.map(() => ({ wch: 14 }))
@@ -1472,6 +1512,31 @@ const downloadImportTemplate = () => {
   XLSX.utils.book_append_sheet(wb, ws, '导入模板')
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
   saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `商品导入模板_${new Date().getTime()}.xlsx`)
+}
+
+/**
+ * 按商品编号批量查询系统中已存在的商品
+ * 商品编号（item_code）具有唯一性，导入前先查出重复编号，避免逐条提交后由后端逐条报错
+ * @returns {Promise<Map<string, string>>} itemCode -> itemName
+ */
+const findExistingItemsByCode = async (codes) => {
+  const existing = new Map()
+  const queue = [...codes]
+  const worker = async () => {
+    while (queue.length) {
+      const code = queue.shift()
+      try {
+        const res = await listItem({ itemCode: code })
+        const hit = (res.data || []).find(it => String(it.itemCode ?? '').trim() === code)
+        if (hit) existing.set(code, hit.itemName)
+      } catch (e) {
+        // 查询失败不阻断导入，最终由后端唯一性校验兜底
+        console.warn(`[导入] 商品编号"${code}"重复校验失败:`, e)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(5, queue.length) }, () => worker()))
+  return existing
 }
 
 /** 提交导入 */
@@ -1508,55 +1573,94 @@ const submitImport = async () => {
     flattenCategory(store.itemCategoryTreeList)
     const brandNameToId = {}
     store.itemBrandList.forEach(b => { brandNameToId[b.brandName] = String(b.id) })
+    const warehouseNameToId = {}
+    store.warehouseList.forEach(w => { warehouseNameToId[w.warehouseName] = String(w.id) })
     const levelLabelToValue = {}
     product_level.value?.forEach(d => { levelLabelToValue[d.label] = d.value })
 
     // ========== 第一遍：先校验商品信息匹配问题 ==========
-    // 匹配失败的商品记入 skipKeys，后续完全不构建、不提交（wms_item 与 wms_item_sku 均不插入）
+    // 校验未通过的商品记入 skipCodes（按商品编号），后续完全不构建、不提交（wms_item 与 wms_item_sku 均不插入）
     const errors = []
-    const skipKeys = new Set()
+    const skipCodes = new Set()
+    // 商品编号（item_code）具有唯一性：同一编号的多行视为同一商品的多个规格行；
+    // 商品名称允许重复，因此不参与分组；规格编号（sku_code/条码）同样允许重复，不做校验
+    // 商品级属性用于校验同一编号的多行是否自相矛盾（编号唯一，不能分属不同仓库/分类等）
+    const conflictCodes = new Set()
+    const buildItemAttrKey = ({ itemName, warehouseName, supplierName, categoryName, brandName, levelName }) =>
+      [itemName, warehouseName, supplierName, categoryName, brandName, levelName].join('||')
+    const codeAttrMap = new Map() // 商品编号 -> { attrKey, rowLine }
     const getRowNames = (row) => {
       const itemName = String(row['商品名称'] || row['商品名称*'] || '').trim()
       const itemCode = String(row['商品编号'] || row['商品编号*'] || '').trim()
+      const warehouseName = String(row['所属仓库'] || row['所属仓库*'] || '').trim()
       const supplierName = String(row['供应商'] || '').trim()
       const categoryName = String(row['商品分类'] || row['商品分类*'] || '').trim()
       const brandName = String(row['商品品牌'] || '').trim()
       const levelName = String(row['商品级别'] || '').trim()
-      return { itemName, itemCode, supplierName, categoryName, brandName, levelName }
+      return { itemName, itemCode, warehouseName, supplierName, categoryName, brandName, levelName }
     }
     rows.forEach((row, idx) => {
       const rowLine = idx + 2 // Excel 行号
-      const { itemName, itemCode, supplierName, categoryName, brandName, levelName } = getRowNames(row)
+      const rowNames = getRowNames(row)
+      const { itemName, itemCode, warehouseName, supplierName, categoryName, brandName, levelName } = rowNames
       if (!itemName) { errors.push(`第 ${rowLine} 行：商品名称为空`); return }
       if (!itemCode) { errors.push(`第 ${rowLine} 行：商品编号为空`); return }
 
-      const key = itemName + '||' + itemCode
-      // 名称匹配校验：有值但匹配不上则报错并标记跳过整个商品
+      // 名称匹配校验：有值但匹配不上则报错并标记跳过整个商品（按商品编号跳过）
+      if (!warehouseName) {
+        errors.push(`第 ${rowLine} 行：所属仓库为空`); skipCodes.add(itemCode)
+      } else if (!warehouseNameToId[warehouseName]) {
+        errors.push(`第 ${rowLine} 行：所属仓库"${warehouseName}"未找到匹配`); skipCodes.add(itemCode)
+      }
       if (supplierName && !merchantNameToId[supplierName]) {
-        errors.push(`第 ${rowLine} 行：供应商"${supplierName}"未找到匹配`); skipKeys.add(key)
+        errors.push(`第 ${rowLine} 行：供应商"${supplierName}"未找到匹配`); skipCodes.add(itemCode)
       }
       if (categoryName && !categoryNameToId[categoryName]) {
-        errors.push(`第 ${rowLine} 行：商品分类"${categoryName}"未找到匹配`); skipKeys.add(key)
+        errors.push(`第 ${rowLine} 行：商品分类"${categoryName}"未找到匹配`); skipCodes.add(itemCode)
       }
       if (brandName && !brandNameToId[brandName]) {
-        errors.push(`第 ${rowLine} 行：商品品牌"${brandName}"未找到匹配`); skipKeys.add(key)
+        errors.push(`第 ${rowLine} 行：商品品牌"${brandName}"未找到匹配`); skipCodes.add(itemCode)
       }
       if (levelName && !levelLabelToValue[levelName]) {
-        errors.push(`第 ${rowLine} 行：商品级别"${levelName}"未找到匹配`); skipKeys.add(key)
+        errors.push(`第 ${rowLine} 行：商品级别"${levelName}"未找到匹配`); skipCodes.add(itemCode)
+      }
+
+      // 同一商品编号的多行必须保持商品级属性一致，否则无法判断归属哪个商品
+      const attrKey = buildItemAttrKey(rowNames)
+      const firstRow = codeAttrMap.get(itemCode)
+      if (!firstRow) {
+        codeAttrMap.set(itemCode, { attrKey, rowLine })
+      } else if (firstRow.attrKey !== attrKey && !conflictCodes.has(itemCode)) {
+        conflictCodes.add(itemCode)
+        errors.push(`商品编号"${itemCode}"在第 ${firstRow.rowLine} 行与第 ${rowLine} 行的商品名称/仓库/供应商/分类/品牌/级别不一致，已跳过该商品`)
       }
     })
+    conflictCodes.forEach(code => skipCodes.add(code))
 
-    // ========== 第二遍：仅为通过校验的商品构建数据（按 商品名称+商品编号 分组）==========
+    // 商品编号在系统中唯一：导入前先查出已存在的编号，重复的直接跳过并提示，
+    // 避免逐条提交后由后端逐条报错（编号过多时跳过预检，直接由后端唯一性校验兜底）
+    const PRE_CHECK_LIMIT = 300
+    const codesInFile = [...new Set(rows.map(row => getRowNames(row).itemCode).filter(Boolean))]
+      .filter(code => !skipCodes.has(code))
+    if (codesInFile.length && codesInFile.length <= PRE_CHECK_LIMIT) {
+      const existingItems = await findExistingItemsByCode(codesInFile)
+      existingItems.forEach((name, code) => {
+        skipCodes.add(code)
+        errors.push(`商品编号"${code}"已存在于系统中（${name || '未知商品'}），已跳过`)
+      })
+    }
+
+    // ========== 第二遍：仅为通过校验的商品构建数据（按 商品编号 分组，编号唯一）==========
     const itemMap = {}
     rows.forEach((row) => {
-      const { itemName, itemCode, supplierName, categoryName, brandName, levelName } = getRowNames(row)
+      const { itemName, itemCode, warehouseName, supplierName, categoryName, brandName, levelName } = getRowNames(row)
       if (!itemName || !itemCode) return
-      const key = itemName + '||' + itemCode
-      if (skipKeys.has(key)) return // 匹配失败：不构建该商品，wms_item 与 wms_item_sku 均不插入
+      if (skipCodes.has(itemCode)) return // 校验未通过：不构建该商品，wms_item 与 wms_item_sku 均不插入
 
-      if (!itemMap[key]) {
-        itemMap[key] = {
+      if (!itemMap[itemCode]) {
+        itemMap[itemCode] = {
           itemName, itemCode,
+          warehouseId: warehouseNameToId[warehouseName] || '',
           unit: merchantNameToId[supplierName] || '',
           itemCategory: categoryNameToId[categoryName] || '',
           itemBrand: brandNameToId[brandName] || '',
@@ -1569,7 +1673,7 @@ const submitImport = async () => {
       const skuCode = String(row['规格编号'] || '').trim()
       // 即使规格名称/编号等信息为空，也插入 SKU 数据，
       // 避免 wms_item 表有数据而 wms_item_sku 表无数据的问题
-      itemMap[key].sku.push({
+      itemMap[itemCode].sku.push({
         skuName, skuCode, barcode: skuCode,
         costPrice: row['成本价'] !== '' ? Number(row['成本价']) : null,
         sellingPrice: row['销售价'] !== '' ? Number(row['销售价']) : null,
@@ -1589,7 +1693,7 @@ const submitImport = async () => {
       const moreText = errors.length > 10 ? `<div>...等共 ${errors.length} 条</div>` : ''
       ElMessage({
         type: 'warning',
-        message: `<div style="line-height:1.6"><b>发现 ${errors.length} 条匹配错误，已跳过相关商品：</b>${errHtml}${moreText}</div>`,
+        message: `<div style="line-height:1.6"><b>发现 ${errors.length} 条校验问题，已跳过相关商品：</b>${errHtml}${moreText}</div>`,
         dangerouslyUseHTMLString: true,
         duration: 6000,
         showClose: true
@@ -1597,27 +1701,36 @@ const submitImport = async () => {
     }
 
     if (!items.length) {
-      proxy?.$modal.msgWarning('没有有效数据可导入（请检查供应商/商品分类/商品品牌/商品级别名称是否正确）')
+      proxy?.$modal.msgWarning('没有有效数据可导入（请检查商品编号是否重复，以及仓库/供应商/商品分类/商品品牌/商品级别名称是否正确）')
       importDialog.loading = false
       return
     }
 
     let successCount = 0
-    let failCount = 0
+    const failMessages = []
     for (const itemData of items) {
       try {
         await addItem(itemData)
         successCount++
       } catch (e) {
-        failCount++
+        failMessages.push(`商品编号 ${itemData.itemCode}（${itemData.itemName}）：${e?.message || e}`)
         console.warn(`[导入] 商品 "${itemData.itemName}" 导入失败:`, e)
       }
     }
 
-    if (failCount === 0) {
+    if (!failMessages.length) {
       proxy?.$modal.msgSuccess(`导入成功！共导入 ${successCount} 个商品`)
     } else {
-      proxy?.$modal.msgWarning(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+      const uniqueMessages = [...new Set(failMessages)]
+      const errHtml = uniqueMessages.slice(0, 10).map(m => `<div>${m}</div>`).join('')
+      const moreText = uniqueMessages.length > 10 ? `<div>...等共 ${uniqueMessages.length} 个商品失败</div>` : ''
+      ElMessage({
+        type: 'warning',
+        message: `<div style="line-height:1.6"><b>导入完成：成功 ${successCount} 个，失败 ${uniqueMessages.length} 个</b>${errHtml}${moreText}</div>`,
+        dangerouslyUseHTMLString: true,
+        duration: 8000,
+        showClose: true
+      })
     }
 
     importDialog.visible = false

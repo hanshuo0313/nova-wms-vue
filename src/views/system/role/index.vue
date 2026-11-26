@@ -202,18 +202,28 @@
 
          <el-form :model="form" label-width="80px">
             <el-form-item label="角色名称">
-               <el-input v-model="form.roleName" :disabled="true" />
+               <el-input v-model="form.roleName" :disabled="true" style="width: 80%"/>
             </el-form-item>
             <el-form-item label="权限字符">
-               <el-input v-model="form.roleKey" :disabled="true" />
+               <el-input v-model="form.roleKey" :disabled="true" style="width: 80%"/>
             </el-form-item>
             <el-form-item label="权限范围">
-               <el-select v-model="form.dataScope" @change="dataScopeSelectChange">
+               <el-select v-model="form.dataScope" @change="dataScopeSelectChange" style="width: 80%">
                   <el-option
                      v-for="item in dataScopeOptions"
                      :key="item.value"
                      :label="item.label"
                      :value="item.value"
+                  ></el-option>
+               </el-select>
+            </el-form-item>
+            <el-form-item label="仓库权限">
+               <el-select v-model="form.warehouseIds" multiple filterable clearable placeholder="不选择则拥有全部仓库权限" style="width: 80%">
+                  <el-option
+                     v-for="item in useWmsStore().warehouseList"
+                     :key="item.id"
+                     :label="item.warehouseName"
+                     :value="item.id"
                   ></el-option>
                </el-select>
             </el-form-item>
@@ -294,6 +304,7 @@
 <script setup name="Role">
 import { addRole, changeRoleStatus, dataScope, delRole, getRole, listRole, updateRole, deptTreeSelect, allocatedUserList, authUserCancel, authUserCancelAll } from "@/api/system/role";
 import { roleMenuTreeselect, treeselect as menuTreeselect } from "@/api/system/menu";
+import { useWmsStore } from "@/store/modules/wms";
 import selectUser from "./selectUser";
 
 const router = useRouter();
@@ -515,6 +526,7 @@ function reset() {
     status: "1",
     menuIds: [],
     deptIds: [],
+    warehouseIds: [],
     menuCheckStrictly: true,
     deptCheckStrictly: true,
     remark: undefined
@@ -640,8 +652,11 @@ function dataScopeSelectChange(value) {
 function handleDataScope(row) {
   reset();
   const deptTreeSelect = getDeptTree(row.roleId);
+  // 加载仓库列表用于配置角色的仓库权限范围
+  useWmsStore().getWarehouseList();
   getRole(row.roleId).then(response => {
     form.value = response.data;
+    form.value.warehouseIds = (response.data.warehouseIds || []).map(id => Number(id));
     openDataScope.value = true;
     nextTick(() => {
       deptTreeSelect.then(res => {
